@@ -300,7 +300,9 @@ def parse_jp_csv(df):
     numeric_columns = ['数量［株］', '単価［円］', '手数料［円］', '税金等［円］', '受渡金額［円］']
     for col in numeric_columns:
         if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(',', '').astype(float)
+            df[col] = df[col].astype(str).str.replace(',', '').str.strip()
+            df[col] = df[col].replace({'-': None, '': None, 'nan': None})
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     parsed = pd.DataFrame({
         'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d').dt.strftime('%Y-%m-%d'),
