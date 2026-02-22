@@ -427,7 +427,7 @@ if sheets_client:
                 st.subheader("日本株CSV")
                 jp_file = st.file_uploader("日本株CSVをアップロード", type=['csv'], key='jp_csv')
                 if jp_file:
-                    df_jp = pd.read_csv(jp_file, encoding='shift-jis')
+                    df_jp = pd.read_csv(jp_file, encoding='cp932')
                     st.info(f"読込: {len(df_jp)}件")
                     if st.button("日本株をインポート", key='import_jp'):
                         with st.spinner('インポート中...'):
@@ -445,7 +445,7 @@ if sheets_client:
                 st.subheader("米国株CSV")
                 us_file = st.file_uploader("米国株CSVをアップロード", type=['csv'], key='us_csv')
                 if us_file:
-                    df_us = pd.read_csv(us_file, encoding='shift-jis')
+                    df_us = pd.read_csv(us_file, encoding='cp932')
                     st.info(f"読込: {len(df_us)}件")
                     if st.button("米国株をインポート", key='import_us'):
                         with st.spinner('インポート中...'):
