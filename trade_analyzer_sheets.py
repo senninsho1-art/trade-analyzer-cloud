@@ -369,32 +369,73 @@ def calculate_position_summary(df):
     if len(df) == 0:
         return pd.DataFrame()
 
-    df_buy = df[df['trade_action'].isin(['買付', '買建', '買理'])].copy()
-    df_sell = df[df['trade_action'].isin(['売付', '売建', '売理'])].copy()
+    # ヘッダー混入行を除去
+    df = df[df['trade_action'] != '売買区分']
+    df = df[df['account_type'] != '口座区分']
+    df = df[df['ticker_code'] != '銘柄コード']
+
+    # 現物ポジション（買付 - 売付）
+    df_spot_buy = df[df['trade_action'] == '買付']
+    df_spot_sell = df[df['trade_action'] == '売付']
+
+    # 信用ポジション（買建のみ残 = 買建 - 売建返済）
+    df_margin_buy = df[df['trade_action'] == '買建']
+    df_margin_sell = df[df['trade_action'].isin(['売建', '売理'])]
 
     summary = []
     for ticker in df['ticker_code'].unique():
-        ticker_buy = df_buy[df_buy['ticker_code'] == ticker]
-        ticker_sell = df_sell[df_sell['ticker_code'] == ticker]
+        stock_rows = df[df['ticker_code'] == ticker]
+        stock_name = stock_rows.iloc[0]['stock_name']
+        market = stock_rows.iloc[0]['market']
 
-        total_buy_qty = pd.to_numeric(ticker_buy['quantity'], errors='coerce').sum()
-        total_sell_qty = pd.to_numeric(ticker_sell['quantity'], errors='coerce').sum()
-        remaining_qty = total_buy_qty - total_sell_qty
+        # 現物残数
+        spot_buy_qty = pd.to_numeric(
+            df_spot_buy[df_spot_buy['ticker_code'] == ticker]['quantity'],
+            errors='coerce').sum()
+        spot_sell_qty = pd.to_numeric(
+            df_spot_sell[df_spot_sell['ticker_code'] == ticker]['quantity'],
+            errors='coerce').sum()
+        spot_remaining = spot_buy_qty - spot_sell_qty
 
-        if remaining_qty != 0:
-            ticker_buy_price = pd.to_numeric(ticker_buy['price'], errors='coerce')
-            ticker_buy_qty = pd.to_numeric(ticker_buy['quantity'], errors='coerce')
-            avg_buy_price = (ticker_buy_price * ticker_buy_qty).sum() / total_buy_qty if total_buy_qty > 0 else 0
-            stock_name = ticker_buy.iloc[0]['stock_name'] if len(ticker_buy) > 0 else ticker_sell.iloc[0]['stock_name']
-            market = ticker_buy.iloc[0]['market'] if len(ticker_buy) > 0 else ticker_sell.iloc[0]['market']
+        # 信用残数（買建）
+        margin_buy_qty = pd.to_numeric(
+            df_margin_buy[df_margin_buy['ticker_code'] == ticker]['quantity'],
+            errors='coerce').sum()
+        margin_sell_qty = pd.to_numeric(
+            df_margin_sell[df_margin_sell['ticker_code'] == ticker]['quantity'],
+            errors='coerce').sum()
+        margin_remaining = margin_buy_qty - margin_sell_qty
 
+        # 現物ポジション追加
+        if spot_remaining > 0:
+            buy_rows = df_spot_buy[df_spot_buy['ticker_code'] == ticker]
+            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
+            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
+            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
                 'market': market,
-                'quantity': remaining_qty,
-                'avg_price': avg_buy_price,
-                'total_cost': avg_buy_price * abs(remaining_qty)
+                'trade_type': '現物',
+                'quantity': spot_remaining,
+                'avg_price': round(avg_price, 2),
+                'total_cost': round(avg_price * spot_remaining, 0)
+            })
+
+        # 信用買建ポジション追加
+        if margin_remaining > 0:
+            buy_rows = df_margin_buy[df_margin_buy['ticker_code'] == ticker]
+            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
+            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
+            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
+            summary.append({
+                'ticker_code': ticker,
+                'stock_name': stock_name,
+                'market': market,
+                'trade_type': '信用買',
+                'quantity': margin_remaining,
+                'avg_price': round(avg_price, 2),
+                'total_cost': round(avg_price * margin_remaining, 0)
             })
 
     return pd.DataFrame(summary)
