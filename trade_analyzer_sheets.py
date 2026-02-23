@@ -370,34 +370,64 @@ def calculate_position_summary(df):
         return pd.DataFrame()
 
     # ヘッダー混入行を除去
-    df = df[df['trade_action'] != '売買区分']
-    df = df[df['account_type'] != '口座区分']
+    df = df[~df['trade_action'].isin(['売買区分', ''])]
     df = df[df['ticker_code'] != '銘柄コード']
 
-    # 現物ポジション（買付 - 売付）
-    df_spot_buy = df[df['trade_action'] == '買付']
-    df_spot_sell = df[df['trade_action'] == '売付']
-
-    # 信用ポジション（買建のみ残 = 買建 - 売建返済）
-    df_margin_buy = df[df['trade_action'] == '買建']
-    df_margin_sell = df[df['trade_action'].isin(['売建', '売理'])]
+    # 取引区分で現物・信用を分類
+    df_spot = df[df['account_type'] == '現物']
+    df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])]
 
     summary = []
-    for ticker in df['ticker_code'].unique():
-        stock_rows = df[df['ticker_code'] == ticker]
-        stock_name = stock_rows.iloc[0]['stock_name']
-        market = stock_rows.iloc[0]['market']
 
-        # 現物残数
-        spot_buy_qty = pd.to_numeric(
-            df_spot_buy[df_spot_buy['ticker_code'] == ticker]['quantity'],
-            errors='coerce').sum()
-        spot_sell_qty = pd.to_numeric(
-            df_spot_sell[df_spot_sell['ticker_code'] == ticker]['quantity'],
-            errors='coerce').sum()
-        spot_remaining = spot_buy_qty - spot_sell_qty
+    # 現物ポジション計算
+    for ticker in df_spot['ticker_code'].unique():
+        rows = df_spot[df_spot['ticker_code'] == ticker]
+        buy_rows = rows[rows['trade_action'] == '買付']
+        sell_rows = rows[rows['trade_action'] == '売付']
 
-        # 信用残数（買建）
+        buy_qty = pd.to_numeric(buy_rows['quantity'], errors='coerce').sum()
+        sell_qty = pd.to_numeric(sell_rows['quantity'], errors='coerce').sum()
+        remaining = buy_qty - sell_qty
+
+        if remaining > 0:
+            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
+            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
+            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
+            summary.append({
+                'ticker_code': ticker,
+                'stock_name': rows.iloc[0]['stock_name'],
+                'market': rows.iloc[0]['market'],
+                'trade_type': '現物',
+                'quantity': int(remaining),
+                'avg_price': round(avg_price, 2),
+                'total_cost': round(avg_price * remaining, 0)
+            })
+
+    # 信用ポジション計算（買建残）
+    for ticker in df_margin['ticker_code'].unique():
+        rows = df_margin[df_margin['ticker_code'] == ticker]
+        buy_rows = rows[rows['trade_action'] == '買建']
+        sell_rows = rows[rows['trade_action'].isin(['売建', '売理', '買理'])]
+
+        buy_qty = pd.to_numeric(buy_rows['quantity'], errors='coerce').sum()
+        sell_qty = pd.to_numeric(sell_rows['quantity'], errors='coerce').sum()
+        remaining = buy_qty - sell_qty
+
+        if remaining > 0:
+            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
+            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
+            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
+            summary.append({
+                'ticker_code': ticker,
+                'stock_name': rows.iloc[0]['stock_name'],
+                'market': rows.iloc[0]['market'],
+                'trade_type': '信用買',
+                'quantity': int(remaining),
+                'avg_price': round(avg_price, 2),
+                'total_cost': round(avg_price * remaining, 0)
+            })
+
+    return pd.DataFrame(summary)
         margin_buy_qty = pd.to_numeric(
             df_margin_buy[df_margin_buy['ticker_code'] == ticker]['quantity'],
             errors='coerce').sum()
