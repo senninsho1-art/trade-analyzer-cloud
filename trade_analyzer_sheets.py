@@ -369,89 +369,12 @@ def calculate_position_summary(df):
     if len(df) == 0:
         return pd.DataFrame()
 
-    df = df[~df['trade_action'].isin(['売買区分', ''])]
-    df = df[df['ticker_code'] != '銘柄コード']
+    import streamlit as st
+    st.write("DEBUG account_type:", df['account_type'].value_counts().to_dict())
+    st.write("DEBUG trade_action:", df['trade_action'].value_counts().to_dict())
+    st.write("DEBUG 総行数:", len(df))
 
-    summary = []
-
-    df_spot = df[df['account_type'].isin(['現物', '現引'])]
-
-    for ticker in df_spot['ticker_code'].unique():
-        rows       = df_spot[df_spot['ticker_code'] == ticker]
-        buy_rows   = rows[rows['trade_action'] == '買付']
-        kenin_rows = rows[rows['account_type'] == '現引']
-        sell_rows  = rows[rows['trade_action'] == '売付']
-
-        buy_qty   = pd.to_numeric(buy_rows['quantity'],   errors='coerce').sum()
-        kenin_qty = pd.to_numeric(kenin_rows['quantity'], errors='coerce').sum()
-        sell_qty  = pd.to_numeric(sell_rows['quantity'],  errors='coerce').sum()
-        remaining = buy_qty + kenin_qty - sell_qty
-
-        if remaining <= 0:
-            continue
-
-        buy_cost = (
-            pd.to_numeric(buy_rows['price'],    errors='coerce') *
-            pd.to_numeric(buy_rows['quantity'], errors='coerce')
-        ).sum()
-        kenin_cost = (
-            pd.to_numeric(kenin_rows['price'],    errors='coerce') *
-            pd.to_numeric(kenin_rows['quantity'], errors='coerce')
-        ).sum()
-        total_qty = buy_qty + kenin_qty
-        avg_price = (buy_cost + kenin_cost) / total_qty if total_qty > 0 else 0
-
-        summary.append({
-            'ticker_code': ticker,
-            'stock_name':  rows.iloc[0]['stock_name'],
-            'market':      rows.iloc[0]['market'],
-            'trade_type':  '現物',
-            'quantity':    int(remaining),
-            'avg_price':   round(avg_price, 2),
-            'total_cost':  round(avg_price * remaining, 0)
-        })
-
-    df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])].copy()
-    df_margin['trade_date'] = pd.to_datetime(df_margin['trade_date'], errors='coerce')
-    latest_date    = df_margin['trade_date'].max()
-    six_months_ago = latest_date - pd.Timedelta(days=180)
-
-    for ticker in df_margin['ticker_code'].unique():
-        rows      = df_margin[df_margin['ticker_code'] == ticker]
-        buy_rows  = rows[rows['trade_action'] == '買建']
-        sell_rows = rows[rows['trade_action'] == '売埋']
-
-        buy_qty  = pd.to_numeric(buy_rows['quantity'],  errors='coerce').sum()
-        sell_qty = pd.to_numeric(sell_rows['quantity'], errors='coerce').sum()
-        remaining = buy_qty - sell_qty
-
-        if remaining <= 0:
-            continue
-
-        last_buy  = buy_rows['trade_date'].max()
-        last_sell = sell_rows['trade_date'].max() if len(sell_rows) > 0 else pd.NaT
-
-        if pd.isna(last_buy) or last_buy < six_months_ago:
-            continue
-        if pd.notna(last_sell) and last_sell > last_buy:
-            continue
-
-        recent_buys = buy_rows[buy_rows['trade_date'] >= six_months_ago]
-        prices = pd.to_numeric(recent_buys['price'],    errors='coerce')
-        qtys   = pd.to_numeric(recent_buys['quantity'], errors='coerce')
-        avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
-
-        summary.append({
-            'ticker_code': ticker,
-            'stock_name':  rows.iloc[0]['stock_name'],
-            'market':      rows.iloc[0]['market'],
-            'trade_type':  '信用買',
-            'quantity':    int(remaining),
-            'avg_price':   round(avg_price, 2),
-            'total_cost':  round(avg_price * remaining, 0)
-        })
-
-    return pd.DataFrame(summary)
+    return pd.DataFrame()
 # ==================== メイン ====================
 
 sheets_client = get_google_sheets_client()
