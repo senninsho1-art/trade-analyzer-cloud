@@ -428,47 +428,6 @@ def calculate_position_summary(df):
             })
 
     return pd.DataFrame(summary)
-        margin_buy_qty = pd.to_numeric(
-            df_margin_buy[df_margin_buy['ticker_code'] == ticker]['quantity'],
-            errors='coerce').sum()
-        margin_sell_qty = pd.to_numeric(
-            df_margin_sell[df_margin_sell['ticker_code'] == ticker]['quantity'],
-            errors='coerce').sum()
-        margin_remaining = margin_buy_qty - margin_sell_qty
-
-        # 現物ポジション追加
-        if spot_remaining > 0:
-            buy_rows = df_spot_buy[df_spot_buy['ticker_code'] == ticker]
-            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
-            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
-            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
-            summary.append({
-                'ticker_code': ticker,
-                'stock_name': stock_name,
-                'market': market,
-                'trade_type': '現物',
-                'quantity': spot_remaining,
-                'avg_price': round(avg_price, 2),
-                'total_cost': round(avg_price * spot_remaining, 0)
-            })
-
-        # 信用買建ポジション追加
-        if margin_remaining > 0:
-            buy_rows = df_margin_buy[df_margin_buy['ticker_code'] == ticker]
-            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
-            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
-            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
-            summary.append({
-                'ticker_code': ticker,
-                'stock_name': stock_name,
-                'market': market,
-                'trade_type': '信用買',
-                'quantity': margin_remaining,
-                'avg_price': round(avg_price, 2),
-                'total_cost': round(avg_price * margin_remaining, 0)
-            })
-
-    return pd.DataFrame(summary)
 
 
 # ==================== メイン ====================
