@@ -379,7 +379,7 @@ def calculate_position_summary(df):
 
     summary = []
 
-    # 現物ポジション計算
+   # 現物ポジション計算
    for ticker in df_spot['ticker_code'].unique():
         rows = df_spot[df_spot['ticker_code'] == ticker]
         buy_rows = rows[rows['trade_action'] == '買付']
