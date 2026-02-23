@@ -451,7 +451,7 @@ def calculate_position_summary(df):
             'total_cost':  round(avg_price * remaining, 0)
         })
 
-    return pd.DataFrame(summary)
+  return pd.DataFrame(summary)
 # ==================== メイン ====================
 
 sheets_client = get_google_sheets_client()
