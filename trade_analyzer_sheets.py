@@ -313,7 +313,7 @@ def parse_jp_csv(df):
         'account_type': df['取引区分'],
         'trade_type': df['口座区分'],
         'trade_action': df['売買区分'],
-        'quantity': df['数量［株］'].astype(int),
+        'quantity': pd.to_numeric(df['数量［株］'], errors='coerce').fillna(0).astype(int),
         'price': df['単価［円］'],
         'commission': df['手数料［円］'],
         'tax': df['税金等［円］'],
