@@ -374,18 +374,20 @@ def calculate_position_summary(df):
     df = df[df['ticker_code'] != '銘柄コード']
 
     # 取引区分で現物・信用を分類
-    df_spot = df[df['account_type'] == '現物']
+    df_spot = df[df['account_type'].isin(['現物', '現引'])]
     df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])]
 
     summary = []
 
     # 現物ポジション計算
-    for ticker in df_spot['ticker_code'].unique():
+   for ticker in df_spot['ticker_code'].unique():
         rows = df_spot[df_spot['ticker_code'] == ticker]
         buy_rows = rows[rows['trade_action'] == '買付']
+        kenin_rows = rows[rows['account_type'] == '現引']
         sell_rows = rows[rows['trade_action'] == '売付']
 
         buy_qty = pd.to_numeric(buy_rows['quantity'], errors='coerce').sum()
+        buy_qty += pd.to_numeric(kenin_rows['quantity'], errors='coerce').sum()
         sell_qty = pd.to_numeric(sell_rows['quantity'], errors='coerce').sum()
         remaining = buy_qty - sell_qty
 
