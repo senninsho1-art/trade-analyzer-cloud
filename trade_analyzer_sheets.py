@@ -369,8 +369,8 @@ def calculate_position_summary(df):
     if len(df) == 0:
         return pd.DataFrame()
 
-    df_buy = df[df['trade_action'] == '買付'].copy()
-    df_sell = df[df['trade_action'] == '売付'].copy()
+    df_buy = df[df['trade_action'].isin(['買付', '買建', '買理'])].copy()
+　  df_sell = df[df['trade_action'].isin(['売付', '売建', '売理'])].copy()
 
     summary = []
     for ticker in df['ticker_code'].unique():
