@@ -372,10 +372,9 @@ def calculate_position_summary(df):
     df = df[~df['trade_action'].isin(['売買区分', ''])]
     df = df[df['ticker_code'] != '銘柄コード']
 
-    df['trade_date'] = pd.to_datetime(df['trade_date'], errors='coerce')
+    summary = []
 
     df_spot = df[df['account_type'].isin(['現物', '現引'])]
-    summary = []
 
     for ticker in df_spot['ticker_code'].unique():
         rows       = df_spot[df_spot['ticker_code'] == ticker]
@@ -412,8 +411,9 @@ def calculate_position_summary(df):
             'total_cost':  round(avg_price * remaining, 0)
         })
 
-    df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])]
-    latest_date    = df['trade_date'].max()
+    df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])].copy()
+    df_margin['trade_date'] = pd.to_datetime(df_margin['trade_date'], errors='coerce')
+    latest_date    = df_margin['trade_date'].max()
     six_months_ago = latest_date - pd.Timedelta(days=180)
 
     for ticker in df_margin['ticker_code'].unique():
@@ -431,7 +431,7 @@ def calculate_position_summary(df):
         last_buy  = buy_rows['trade_date'].max()
         last_sell = sell_rows['trade_date'].max() if len(sell_rows) > 0 else pd.NaT
 
-        if last_buy < six_months_ago:
+        if pd.isna(last_buy) or last_buy < six_months_ago:
             continue
         if pd.notna(last_sell) and last_sell > last_buy:
             continue
@@ -452,7 +452,6 @@ def calculate_position_summary(df):
         })
 
     return pd.DataFrame(summary)
-
 # ==================== メイン ====================
 
 sheets_client = get_google_sheets_client()
