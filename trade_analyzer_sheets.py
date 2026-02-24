@@ -21,36 +21,36 @@ st.set_page_config(
 # カスタムCSS（モバイルファースト）
 st.markdown("""
 <style>
-    .main .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-        max-width: 100%;
-    }
-    .stButton button {
-        width: 100%;
-        height: 50px;
-        font-size: 16px;
-        margin: 5px 0;
-    }
-    .stTextInput input, .stNumberInput input, .stSelectbox select {
-        height: 50px;
-        font-size: 16px;
-    }
-    .stTabs [data-baseweb="tab-list"] button {
-        font-size: 16px;
-        padding: 15px;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-    }
-    .dataframe {
-        font-size: 14px;
-    }
+.main .block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    max-width: 100%;
+}
+.stButton button {
+    width: 100%;
+    height: 50px;
+    font-size: 16px;
+    margin: 5px 0;
+}
+.stTextInput input, .stNumberInput input, .stSelectbox select {
+    height: 50px;
+    font-size: 16px;
+}
+.stTabs [data-baseweb="tab-list"] button {
+    font-size: 16px;
+    padding: 15px;
+}
+.metric-card {
+    background-color: #f0f2f6;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px 0;
+}
+.dataframe {
+    font-size: 14px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -87,7 +87,6 @@ def get_google_sheets_client():
 
         # どちらもない場合
         return None
-
     except Exception as e:
         st.error(f"Google Sheets接続エラー: {str(e)}")
         return None
@@ -112,10 +111,8 @@ def get_spreadsheet_id():
 def create_spreadsheet_if_needed(sheets_client):
     """スプレッドシートが存在しない場合は作成"""
     spreadsheet_id = get_spreadsheet_id()
-
     if not spreadsheet_id:
         st.warning("📝 スプレッドシートIDが設定されていません。新規作成します。")
-
         spreadsheet = {
             'properties': {'title': 'トレード分析データ'},
             'sheets': [
@@ -126,7 +123,6 @@ def create_spreadsheet_if_needed(sheets_client):
                 {'properties': {'title': 'reason_definitions'}}
             ]
         }
-
         try:
             result = sheets_client.create(body=spreadsheet).execute()
             new_id = result['spreadsheetId']
@@ -137,7 +133,6 @@ def create_spreadsheet_if_needed(sheets_client):
         except Exception as e:
             st.error(f"作成エラー: {str(e)}")
             return None
-
     return spreadsheet_id
 
 def read_sheet(sheets_client, spreadsheet_id, sheet_name, has_header=True):
@@ -147,17 +142,13 @@ def read_sheet(sheets_client, spreadsheet_id, sheet_name, has_header=True):
             spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!A:Z"
         ).execute()
-
         values = result.get('values', [])
-
         if not values:
             return pd.DataFrame()
-
         if has_header and len(values) > 0:
             df = pd.DataFrame(values[1:], columns=values[0])
         else:
             df = pd.DataFrame(values)
-
         return df
     except HttpError as e:
         if e.resp.status == 404:
@@ -169,13 +160,11 @@ def write_sheet(sheets_client, spreadsheet_id, sheet_name, df, clear_first=True)
     """シートにデータを書き込み"""
     try:
         values = [df.columns.tolist()] + df.fillna('').astype(str).values.tolist()
-
         if clear_first:
             sheets_client.values().clear(
                 spreadsheetId=spreadsheet_id,
                 range=f"{sheet_name}!A:Z"
             ).execute()
-
         body = {'values': values}
         sheets_client.values().update(
             spreadsheetId=spreadsheet_id,
@@ -183,7 +172,6 @@ def write_sheet(sheets_client, spreadsheet_id, sheet_name, df, clear_first=True)
             valueInputOption='RAW',
             body=body
         ).execute()
-
         return True
     except Exception as e:
         st.error(f"書き込みエラー ({sheet_name}): {str(e)}")
@@ -198,7 +186,6 @@ def append_to_sheet(sheets_client, spreadsheet_id, sheet_name, row_data):
             values = [[str(v) for v in row_data.values()]]
         else:
             values = [row_data]
-
         body = {'values': values}
         sheets_client.values().append(
             spreadsheetId=spreadsheet_id,
@@ -207,7 +194,6 @@ def append_to_sheet(sheets_client, spreadsheet_id, sheet_name, row_data):
             insertDataOption='INSERT_ROWS',
             body=body
         ).execute()
-
         return True
     except Exception as e:
         st.error(f"追加エラー ({sheet_name}): {str(e)}")
@@ -215,7 +201,6 @@ def append_to_sheet(sheets_client, spreadsheet_id, sheet_name, row_data):
 
 def init_spreadsheet(sheets_client, spreadsheet_id):
     """スプレッドシートの初期化（初回のみ）"""
-
     settings_df = read_sheet(sheets_client, spreadsheet_id, 'settings')
     if len(settings_df) == 0:
         settings_df = pd.DataFrame({
@@ -260,7 +245,6 @@ def init_spreadsheet(sheets_client, spreadsheet_id):
             ('exit_detail', '損切り', 'シナリオ崩れ', 1),
             ('exit_detail', '調整', 'ポジション縮小', 1),
         ]
-
         reason_df = pd.DataFrame(initial_reasons, columns=[
             'reason_type', 'category', 'detail', 'is_active'
         ])
@@ -306,7 +290,8 @@ def parse_jp_csv(df):
 
     parsed = pd.DataFrame({
         'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d').dt.strftime('%Y-%m-%d'),
-        'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
+        'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d',
+                                          errors='coerce').dt.strftime('%Y-%m-%d'),
         'market': '日本株',
         'ticker_code': df['銘柄コード'].astype(str),
         'stock_name': df['銘柄名'],
@@ -335,7 +320,8 @@ def parse_us_csv(df):
 
     parsed = pd.DataFrame({
         'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d').dt.strftime('%Y-%m-%d'),
-        'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
+        'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d',
+                                          errors='coerce').dt.strftime('%Y-%m-%d'),
         'market': '米国株',
         'ticker_code': df['ティッカー'],
         'stock_name': df['銘柄名'],
@@ -364,14 +350,81 @@ def load_all_trades(sheets_client, spreadsheet_id):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
 
-def calculate_position_summary(df): return __import__('pandas').DataFrame()
+def calculate_position_summary(df):
+    """保有ポジションの計算"""
+    if len(df) == 0:
+        return pd.DataFrame()
+
+    df = df[~df['trade_action'].isin(['売買区分', ''])]
+    df = df[df['ticker_code'] != '銘柄コード']
+    df_full = df.copy()
+
+    df_spot = df[df['account_type'].isin(['現物', '現引'])]
+    df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])]
+
+    summary = []
+
+    # 現物ポジション
+    for ticker in df_spot['ticker_code'].unique():
+        rows = df_spot[df_spot['ticker_code'] == ticker]
+        buy_rows = rows[rows['trade_action'] == '買付']
+        kenin_rows = rows[rows['account_type'] == '現引']
+        sell_rows = rows[rows['trade_action'] == '売付']
+        nyuko_rows = df_full[(df_full['ticker_code'] == ticker) & (df_full['trade_action'] == '入庫')]
+
+        buy_qty = pd.to_numeric(buy_rows['quantity'], errors='coerce').sum()
+        buy_qty += pd.to_numeric(kenin_rows['quantity'], errors='coerce').sum()
+        buy_qty += pd.to_numeric(nyuko_rows['quantity'], errors='coerce').sum()
+        sell_qty = pd.to_numeric(sell_rows['quantity'], errors='coerce').sum()
+        remaining = buy_qty - sell_qty
+
+        if remaining > 0:
+            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
+            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
+            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
+            summary.append({
+                'ticker_code': ticker,
+                'stock_name': rows.iloc[0]['stock_name'],
+                'market': rows.iloc[0]['market'],
+                'trade_type': '現物',
+                'quantity': int(remaining),
+                'avg_price': round(avg_price, 2),
+                'total_cost': round(avg_price * remaining, 0)
+            })
+
+    # 信用買ポジション
+    for ticker in df_margin['ticker_code'].unique():
+        rows = df_margin[df_margin['ticker_code'] == ticker]
+        buy_rows = rows[rows['trade_action'] == '買建']
+        sell_rows = rows[rows['trade_action'] == '売埋']
+        kenin_rows = df_full[(df_full['account_type'] == '現引') & (df_full['ticker_code'] == ticker)]
+
+        buy_qty = pd.to_numeric(buy_rows['quantity'], errors='coerce').sum()
+        sell_qty = pd.to_numeric(sell_rows['quantity'], errors='coerce').sum()
+        kenin_qty = pd.to_numeric(kenin_rows['quantity'], errors='coerce').sum()
+        remaining = buy_qty - sell_qty - kenin_qty
+
+        if remaining > 0:
+            prices = pd.to_numeric(buy_rows['price'], errors='coerce')
+            qtys = pd.to_numeric(buy_rows['quantity'], errors='coerce')
+            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
+            summary.append({
+                'ticker_code': ticker,
+                'stock_name': rows.iloc[0]['stock_name'],
+                'market': rows.iloc[0]['market'],
+                'trade_type': '信用買',
+                'quantity': int(remaining),
+                'avg_price': round(avg_price, 2),
+                'total_cost': round(avg_price * remaining, 0)
+            })
+
+    return pd.DataFrame(summary)
+
+
 # ==================== メイン ====================
-
 sheets_client = get_google_sheets_client()
-
 if sheets_client:
     spreadsheet_id = create_spreadsheet_if_needed(sheets_client)
-
     if spreadsheet_id:
         init_spreadsheet(sheets_client, spreadsheet_id)
 
@@ -389,7 +442,6 @@ if sheets_client:
         # ========== タブ1: データ管理 ==========
         with tab1:
             st.header("データ管理")
-
             col1, col2 = st.columns(2)
 
             with col1:
@@ -430,18 +482,17 @@ if sheets_client:
 
             st.divider()
             st.subheader("📋 全トレード履歴")
-
             df_all = load_all_trades(sheets_client, spreadsheet_id)
             if len(df_all) > 0:
                 st.info(f"総件数: {len(df_all)}件")
-
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     market_filter = st.selectbox("市場", ["全て"] + list(df_all['market'].unique()))
                 with col2:
                     action_filter = st.selectbox("売買", ["全て", "買付", "売付"])
                 with col3:
-                    year_filter = st.selectbox("年", ["全て"] + sorted(df_all['trade_date'].dt.year.unique().tolist(), reverse=True))
+                    year_filter = st.selectbox("年", ["全て"] +
+                                               sorted(df_all['trade_date'].dt.year.unique().tolist(), reverse=True))
 
                 df_filtered = df_all.copy()
                 if market_filter != "全て":
@@ -452,7 +503,7 @@ if sheets_client:
                     df_filtered = df_filtered[df_filtered['trade_date'].dt.year == year_filter]
 
                 display_cols = ['trade_date', 'market', 'ticker_code', 'stock_name', 'trade_action',
-                               'quantity', 'price', 'total_amount']
+                                'quantity', 'price', 'total_amount']
                 st.dataframe(
                     df_filtered[display_cols].rename(columns={
                         'trade_date': '約定日',
@@ -468,30 +519,29 @@ if sheets_client:
                     height=400
                 )
 
-                st.divider()
-                st.subheader("📦 保有ポジション")
-                df_positions = calculate_position_summary(df_all)
-                if len(df_positions) > 0:
-                    st.dataframe(
-                        df_positions.rename(columns={
-                            'ticker_code': 'コード',
-                            'stock_name': '銘柄名',
-                            'market': '市場',
-                            'quantity': '保有数量',
-                            'avg_price': '平均取得単価',
-                            'total_cost': '総額'
-                        }),
-                        use_container_width=True
-                    )
-                else:
-                    st.info("現在保有中のポジションはありません")
+            st.divider()
+            st.subheader("📦 保有ポジション")
+            df_positions = calculate_position_summary(df_all)
+            if len(df_positions) > 0:
+                st.dataframe(
+                    df_positions.rename(columns={
+                        'ticker_code': 'コード',
+                        'stock_name': '銘柄名',
+                        'market': '市場',
+                        'quantity': '保有数量',
+                        'avg_price': '平均取得単価',
+                        'total_cost': '総額'
+                    }),
+                    use_container_width=True
+                )
             else:
+                st.info("現在保有中のポジションはありません")
+            if len(df_all) == 0:
                 st.info("データがありません。CSVファイルをインポートしてください。")
 
         # ========== タブ2: 資金管理 ==========
         with tab2:
             st.header("💰 資金管理ダッシュボード")
-
             settings = load_settings(sheets_client, spreadsheet_id)
 
             st.subheader("総資産設定")
@@ -516,7 +566,6 @@ if sheets_client:
                 step=0.1,
                 format="%.1f%%"
             )
-
             risk_amount = total_capital * (risk_pct / 100)
             st.metric("1トレードの許容損失額", f"¥{risk_amount:,.0f}")
 
@@ -526,23 +575,21 @@ if sheets_client:
                 st.rerun()
 
             st.divider()
-
             st.subheader("🔢 適正株数計算機")
-
             col1, col2 = st.columns(2)
             with col1:
                 calc_ticker = st.text_input("銘柄コード", placeholder="例: 7203")
-                calc_current_price = st.number_input("現在価格（円）", min_value=0.0, step=0.01, format="%.2f")
+                calc_current_price = st.number_input("現在価格（円）", min_value=0.0, step=0.01,
+                                                     format="%.2f")
             with col2:
-                calc_stop_loss = st.number_input("損切り価格（円）", min_value=0.0, step=0.01, format="%.2f")
+                calc_stop_loss = st.number_input("損切り価格（円）", min_value=0.0, step=0.01,
+                                                 format="%.2f")
 
             if calc_current_price > 0 and calc_stop_loss > 0 and calc_current_price > calc_stop_loss:
                 loss_per_share = calc_current_price - calc_stop_loss
                 max_shares = int(risk_amount / loss_per_share)
                 total_investment = calc_current_price * max_shares
-
                 st.success(f"### 🎯 エントリー可能株数: **{max_shares}株**")
-
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("投資額", f"¥{total_investment:,.0f}")
@@ -550,7 +597,6 @@ if sheets_client:
                     st.metric("1株あたり損失", f"¥{loss_per_share:,.2f}")
                 with col3:
                     st.metric("最大損失額", f"¥{risk_amount:,.0f}")
-
                 loss_pct = (loss_per_share / calc_current_price) * 100
                 st.info(f"損切り幅: {loss_pct:.2f}% | 資産比率: {(total_investment/total_capital)*100:.2f}%")
             elif calc_current_price > 0 and calc_stop_loss >= calc_current_price:
@@ -563,19 +609,21 @@ if sheets_client:
             with st.expander("➕ 新規ポジション登録", expanded=False):
                 entry_ticker = st.text_input("銘柄コード", key="entry_ticker")
                 entry_name = st.text_input("銘柄名", key="entry_name")
-
                 col1, col2 = st.columns(2)
                 with col1:
                     entry_date = st.date_input("エントリー日", key="entry_date")
-                    entry_price = st.number_input("エントリー価格", min_value=0.0, step=0.01, key="entry_price")
+                    entry_price = st.number_input("エントリー価格", min_value=0.0, step=0.01,
+                                                  key="entry_price")
                 with col2:
                     entry_qty = st.number_input("数量", min_value=1, step=1, key="entry_qty")
-                    stop_loss_price = st.number_input("損切り価格", min_value=0.0, step=0.01, key="stop_loss_price")
+                    stop_loss_price = st.number_input("損切り価格", min_value=0.0, step=0.01,
+                                                      key="stop_loss_price")
 
                 st.subheader("エントリー根拠")
                 entry_categories = get_reason_list(sheets_client, spreadsheet_id, 'entry_category')
                 if len(entry_categories) > 0:
-                    entry_category = st.selectbox("種別", entry_categories['detail'].tolist(), key="entry_cat")
+                    entry_category = st.selectbox("種別", entry_categories['detail'].tolist(),
+                                                  key="entry_cat")
                 else:
                     entry_category = st.text_input("種別", key="entry_cat")
 
@@ -583,8 +631,10 @@ if sheets_client:
                 if len(entry_details) > 0:
                     entry_groups = entry_details.groupby('category')['detail'].apply(list).to_dict()
                     if len(entry_groups) > 0:
-                        entry_group = st.selectbox("理由カテゴリ", list(entry_groups.keys()), key="entry_group")
-                        entry_detail = st.selectbox("理由詳細", entry_groups[entry_group], key="entry_detail")
+                        entry_group = st.selectbox("理由カテゴリ", list(entry_groups.keys()),
+                                                   key="entry_group")
+                        entry_detail = st.selectbox("理由詳細", entry_groups[entry_group],
+                                                    key="entry_detail")
                     else:
                         entry_group = st.text_input("理由カテゴリ", key="entry_group")
                         entry_detail = st.text_input("理由詳細", key="entry_detail")
@@ -594,7 +644,8 @@ if sheets_client:
 
                 stop_loss_reasons = get_reason_list(sheets_client, spreadsheet_id, 'stop_loss')
                 if len(stop_loss_reasons) > 0:
-                    stop_loss_reason = st.selectbox("損切り根拠", stop_loss_reasons['detail'].tolist(), key="sl_reason")
+                    stop_loss_reason = st.selectbox("損切り根拠", stop_loss_reasons['detail'].tolist(),
+                                                    key="sl_reason")
                 else:
                     stop_loss_reason = st.text_input("損切り根拠", key="sl_reason")
 
@@ -616,39 +667,31 @@ if sheets_client:
                             'is_active': 1,
                             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         }
-
                         df_active = read_sheet(sheets_client, spreadsheet_id, 'active_trades')
                         if len(df_active) == 0:
                             df_active = pd.DataFrame([new_row])
                             write_sheet(sheets_client, spreadsheet_id, 'active_trades', df_active)
                         else:
                             append_to_sheet(sheets_client, spreadsheet_id, 'active_trades', new_row)
-
                         st.success("✅ 登録しました")
                         st.rerun()
                     else:
                         st.error("必須項目を入力してください")
 
             st.divider()
-
             st.subheader("保有中のポジション")
             df_active = read_sheet(sheets_client, spreadsheet_id, 'active_trades')
-
             if len(df_active) > 0:
                 df_active = df_active[df_active['is_active'] == '1']
-
                 for idx, row in df_active.iterrows():
                     with st.container():
                         col1, col2, col3 = st.columns([2, 2, 1])
-
                         with col1:
                             st.markdown(f"**{row['ticker_code']}** {row['stock_name']}")
                             st.caption(f"エントリー: {row['entry_date']} @ ¥{float(row['entry_price']):,.2f}")
-
                         with col2:
                             st.metric("数量", f"{row['quantity']}株")
                             st.caption(f"損切: ¥{float(row['stop_loss_price']):,.2f}")
-
                         with col3:
                             if st.button("決済", key=f"close_{idx}", use_container_width=True):
                                 st.session_state[f"closing_{idx}"] = True
@@ -663,11 +706,11 @@ if sheets_client:
                         if st.session_state.get(f"closing_{idx}", False):
                             with st.form(f"close_form_{idx}"):
                                 st.subheader("決済入力")
-
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     exit_date = st.date_input("決済日", value=datetime.now())
-                                    exit_price = st.number_input("決済価格", min_value=0.0, step=0.01, value=float(row['entry_price']))
+                                    exit_price = st.number_input("決済価格", min_value=0.0, step=0.01,
+                                                                 value=float(row['entry_price']))
                                 with col2:
                                     max_profit = st.number_input("最大含み益", value=0.0, step=0.01)
                                     max_loss = st.number_input("最大含み損", value=0.0, step=0.01)
@@ -692,7 +735,6 @@ if sheets_client:
                                     exit_detail = st.text_input("決済理由詳細")
 
                                 close_notes = st.text_area("決済メモ")
-
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     submit = st.form_submit_button("✅ 決済完了", use_container_width=True)
@@ -701,8 +743,8 @@ if sheets_client:
 
                                 if submit and exit_price > 0:
                                     profit_loss = (exit_price - float(row['entry_price'])) * float(row['quantity'])
-                                    profit_loss_pct = ((exit_price - float(row['entry_price'])) / float(row['entry_price'])) * 100
-
+                                    profit_loss_pct = ((exit_price - float(row['entry_price'])) /
+                                                       float(row['entry_price'])) * 100
                                     closed_row = {
                                         'ticker_code': row['ticker_code'],
                                         'stock_name': row['stock_name'],
@@ -727,17 +769,14 @@ if sheets_client:
                                         'notes': f"{row.get('notes', '')}\n決済メモ: {close_notes}" if close_notes else row.get('notes', ''),
                                         'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                     }
-
                                     df_closed_sheet = read_sheet(sheets_client, spreadsheet_id, 'closed_trades')
                                     if len(df_closed_sheet) == 0:
                                         df_closed_sheet = pd.DataFrame([closed_row])
                                         write_sheet(sheets_client, spreadsheet_id, 'closed_trades', df_closed_sheet)
                                     else:
                                         append_to_sheet(sheets_client, spreadsheet_id, 'closed_trades', closed_row)
-
                                     df_active.loc[idx, 'is_active'] = 0
                                     write_sheet(sheets_client, spreadsheet_id, 'active_trades', df_active)
-
                                     st.success(f"✅ 決済完了 損益: ¥{profit_loss:,.0f} ({profit_loss_pct:+.2f}%)")
                                     del st.session_state[f"closing_{idx}"]
                                     st.rerun()
@@ -746,28 +785,23 @@ if sheets_client:
                                     del st.session_state[f"closing_{idx}"]
                                     st.rerun()
 
-                        st.divider()
-            else:
+            st.divider()
+            if len(df_active) == 0:
                 st.info("アクティブなポジションはありません")
 
         # ========== タブ4: 分析 ==========
         with tab4:
             st.header("📊 トレード分析")
-
             df_closed = read_sheet(sheets_client, spreadsheet_id, 'closed_trades')
-
             if len(df_closed) > 0:
                 df_closed['entry_date'] = pd.to_datetime(df_closed['entry_date'])
                 df_closed['exit_date'] = pd.to_datetime(df_closed['exit_date'])
                 df_closed['hold_days'] = (df_closed['exit_date'] - df_closed['entry_date']).dt.days
-
                 df_closed['profit_loss'] = pd.to_numeric(df_closed['profit_loss'], errors='coerce')
                 df_closed['profit_loss_pct'] = pd.to_numeric(df_closed['profit_loss_pct'], errors='coerce')
 
                 st.subheader("📈 パフォーマンスサマリー")
-
                 col1, col2, col3, col4 = st.columns(4)
-
                 total_trades = len(df_closed)
                 winning_trades = len(df_closed[df_closed['profit_loss'] > 0])
                 losing_trades = len(df_closed[df_closed['profit_loss'] < 0])
@@ -776,19 +810,16 @@ if sheets_client:
                 with col1:
                     st.metric("総トレード数", total_trades)
                     st.metric("勝率", f"{win_rate:.1f}%")
-
                 with col2:
                     total_profit = df_closed['profit_loss'].sum()
                     avg_profit = df_closed['profit_loss'].mean()
                     st.metric("総損益", f"¥{total_profit:,.0f}")
                     st.metric("平均損益", f"¥{avg_profit:,.0f}")
-
                 with col3:
                     max_profit = df_closed['profit_loss'].max()
                     max_loss = df_closed['profit_loss'].min()
                     st.metric("最大利益", f"¥{max_profit:,.0f}")
                     st.metric("最大損失", f"¥{max_loss:,.0f}")
-
                 with col4:
                     avg_win = df_closed[df_closed['profit_loss'] > 0]['profit_loss'].mean() if winning_trades > 0 else 0
                     avg_loss = abs(df_closed[df_closed['profit_loss'] < 0]['profit_loss'].mean()) if losing_trades > 0 else 0
@@ -797,16 +828,13 @@ if sheets_client:
                     st.metric("平均保有日数", f"{df_closed['hold_days'].mean():.1f}日")
 
                 st.divider()
-
                 col1, col2 = st.columns(2)
-
                 with col1:
                     df_closed_sorted = df_closed.sort_values('exit_date')
                     df_closed_sorted['cumulative_pl'] = df_closed_sorted['profit_loss'].cumsum()
-
                     fig = px.line(df_closed_sorted, x='exit_date', y='cumulative_pl',
-                                 title='累積損益推移',
-                                 labels={'exit_date': '決済日', 'cumulative_pl': '累積損益（円）'})
+                                  title='累積損益推移',
+                                  labels={'exit_date': '決済日', 'cumulative_pl': '累積損益（円）'})
                     fig.update_layout(height=300)
                     st.plotly_chart(fig, use_container_width=True)
 
@@ -816,29 +844,24 @@ if sheets_client:
                         '件数': [winning_trades, losing_trades]
                     })
                     fig = px.pie(win_loss_data, values='件数', names='結果',
-                                title='勝敗分布',
-                                color='結果',
-                                color_discrete_map={'勝ち': '#00CC96', '負け': '#EF553B'})
+                                 title='勝敗分布',
+                                 color='結果',
+                                 color_discrete_map={'勝ち': '#00CC96', '負け': '#EF553B'})
                     fig.update_layout(height=300)
                     st.plotly_chart(fig, use_container_width=True)
 
                 st.divider()
-
                 st.subheader("📋 銘柄別分析")
-
                 ticker_stats = df_closed.groupby('ticker_code').agg({
                     'profit_loss': ['sum', 'mean', 'count'],
                     'profit_loss_pct': 'mean'
                 }).round(2)
                 ticker_stats.columns = ['総損益', '平均損益', 'トレード数', '平均利益率%']
                 ticker_stats = ticker_stats.sort_values('総損益', ascending=False)
-
                 st.dataframe(ticker_stats, use_container_width=True)
 
                 st.divider()
-
                 st.subheader("📜 トレード履歴")
-
                 col1, col2 = st.columns(2)
                 with col1:
                     date_from = st.date_input("開始日", value=df_closed['exit_date'].min())
@@ -849,11 +872,9 @@ if sheets_client:
                     (df_closed['exit_date'] >= pd.Timestamp(date_from)) &
                     (df_closed['exit_date'] <= pd.Timestamp(date_to))
                 ]
-
                 display_cols = ['exit_date', 'ticker_code', 'stock_name', 'entry_price',
-                               'exit_price', 'quantity', 'profit_loss', 'profit_loss_pct',
-                               'entry_reason_category', 'exit_reason_category']
-
+                                'exit_price', 'quantity', 'profit_loss', 'profit_loss_pct',
+                                'entry_reason_category', 'exit_reason_category']
                 st.dataframe(
                     df_filtered[display_cols].rename(columns={
                         'exit_date': '決済日',
@@ -876,9 +897,7 @@ if sheets_client:
         # ========== タブ5: 設定 ==========
         with tab5:
             st.header("⚙️ 設定")
-
             st.subheader("根拠リストのカスタマイズ")
-
             reason_type = st.selectbox(
                 "編集する根拠タイプ",
                 ["entry_category", "entry_detail", "stop_loss", "exit_category", "exit_detail"],
@@ -892,14 +911,12 @@ if sheets_client:
             )
 
             df_reasons = get_reason_list(sheets_client, spreadsheet_id, reason_type)
-
             if len(df_reasons) > 0:
                 st.dataframe(df_reasons, use_container_width=True)
 
             with st.expander("➕ 新規追加"):
                 new_category = st.text_input("カテゴリ")
                 new_detail = st.text_input("詳細")
-
                 if st.button("追加", use_container_width=True):
                     if new_category and new_detail:
                         new_row = {
@@ -909,26 +926,37 @@ if sheets_client:
                             'is_active': 1,
                             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         }
-
                         df_all_reasons = read_sheet(sheets_client, spreadsheet_id, 'reason_definitions')
                         if len(df_all_reasons) == 0:
                             df_all_reasons = pd.DataFrame([new_row])
                             write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', df_all_reasons)
                         else:
                             append_to_sheet(sheets_client, spreadsheet_id, 'reason_definitions', new_row)
-
                         st.success("✅ 追加しました")
                         st.rerun()
 
             st.divider()
-
             st.subheader("データ管理")
-
-            if st.button("🗑️ 全データをリセット", use_container_width=True):
+            if st.button("🗑 全データをリセット", use_container_width=True):
                 if st.checkbox("本当にリセットしますか？（取消不可）"):
-                    write_sheet(sheets_client, spreadsheet_id, 'trades', pd.DataFrame(columns=['trade_date', 'settlement_date', 'market', 'ticker_code', 'stock_name', 'account_type', 'trade_type', 'trade_action', 'quantity', 'price', 'commission', 'tax', 'total_amount', 'exchange_rate', 'currency', 'created_at']))
-                    write_sheet(sheets_client, spreadsheet_id, 'active_trades', pd.DataFrame(columns=['ticker_code', 'stock_name', 'entry_date', 'entry_price', 'quantity', 'entry_reason_category', 'entry_reason_detail', 'stop_loss_price', 'stop_loss_reason', 'notes', 'is_active', 'created_at']))
-                    write_sheet(sheets_client, spreadsheet_id, 'closed_trades', pd.DataFrame(columns=['ticker_code', 'stock_name', 'entry_date', 'entry_price', 'exit_date', 'exit_price', 'quantity', 'profit_loss', 'profit_loss_pct', 'entry_reason_category', 'entry_reason_detail', 'exit_reason_category', 'exit_reason_detail', 'stop_loss_price', 'max_profit', 'max_loss', 'price_3days_later', 'price_1week_later', 'price_1month_later', 'exit_evaluation', 'notes', 'created_at']))
+                    write_sheet(sheets_client, spreadsheet_id, 'trades',
+                                pd.DataFrame(columns=['trade_date', 'settlement_date', 'market', 'ticker_code',
+                                                      'stock_name', 'account_type', 'trade_type', 'trade_action',
+                                                      'quantity', 'price', 'commission', 'tax', 'total_amount',
+                                                      'exchange_rate', 'currency', 'created_at']))
+                    write_sheet(sheets_client, spreadsheet_id, 'active_trades',
+                                pd.DataFrame(columns=['ticker_code', 'stock_name', 'entry_date', 'entry_price',
+                                                      'quantity', 'entry_reason_category', 'entry_reason_detail',
+                                                      'stop_loss_price', 'stop_loss_reason', 'notes',
+                                                      'is_active', 'created_at']))
+                    write_sheet(sheets_client, spreadsheet_id, 'closed_trades',
+                                pd.DataFrame(columns=['ticker_code', 'stock_name', 'entry_date', 'entry_price',
+                                                      'exit_date', 'exit_price', 'quantity', 'profit_loss',
+                                                      'profit_loss_pct', 'entry_reason_category',
+                                                      'entry_reason_detail', 'exit_reason_category',
+                                                      'exit_reason_detail', 'stop_loss_price', 'max_profit',
+                                                      'max_loss', 'price_3days_later', 'price_1week_later',
+                                                      'price_1month_later', 'exit_evaluation', 'notes', 'created_at']))
                     st.success("✅ データをリセットしました")
                     st.rerun()
 
@@ -939,18 +967,20 @@ if sheets_client:
 
         st.divider()
         st.caption("© 2026 トレード分析＆資金管理アプリ (Google Sheets版)")
+
     else:
         st.error("スプレッドシートIDの設定が必要です")
+
 else:
     st.error("""
-    ### ⚠️ Google Sheets認証が必要です
+### ⚠️ Google Sheets認証が必要です
 
-    **Railwayの場合**、以下の環境変数を設定してください：
+**Railwayの場合**、以下の環境変数を設定してください：
 
-    | 変数名 | 内容 |
-    |--------|------|
-    | `GCP_SERVICE_ACCOUNT_JSON` | サービスアカウントJSONファイルの中身（全文） |
-    | `SPREADSHEET_ID` | GoogleスプレッドシートのID |
+| 変数名 | 内容 |
+|--------|------|
+| `GCP_SERVICE_ACCOUNT_JSON` | サービスアカウントJSONファイルの中身（全文） |
+| `SPREADSHEET_ID` | GoogleスプレッドシートのID |
 
-    詳細は `RAILWAY_DEPLOY.md` を参照してください。
-    """)
+詳細は `RAILWAY_DEPLOY.md` を参照してください。
+""")
