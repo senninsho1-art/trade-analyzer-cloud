@@ -389,7 +389,7 @@ def calculate_position_summary(df):
         all_rows = df_full[df_full['ticker_code'] == ticker]
         buy_rows = all_rows[all_rows['trade_action'] == '買付']
         sell_rows = all_rows[all_rows['trade_action'] == '売付']
-        kenin_rows = all_rows[all_rows['account_type'] == '現引']
+        kenin_rows = all_rows[(all_rows['account_type'] == '現引') & (all_rows['ticker_code'] == ticker)]
         nyuko_rows = all_rows[all_rows['trade_action'] == '入庫']
 
         buy_qty = buy_rows['quantity'].sum()
