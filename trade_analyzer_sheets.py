@@ -58,14 +58,7 @@ st.markdown("""
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 def get_google_sheets_client():
-    """
-    Google Sheets APIクライアントを取得。
-    Railway: 環境変数 GCP_SERVICE_ACCOUNT_JSON（JSONを丸ごと文字列）から読む。
-    Streamlit Cloud: st.secrets["gcp_service_account"] から読む。
-    ローカル: 環境変数 or secrets.toml
-    """
     try:
-        # ① 環境変数からJSONを直接取得（Railway用）
         gcp_json_str = os.environ.get("GCP_SERVICE_ACCOUNT_JSON", "")
         if gcp_json_str:
             service_account_info = json.loads(gcp_json_str)
@@ -76,7 +69,6 @@ def get_google_sheets_client():
             service = build('sheets', 'v4', credentials=credentials)
             return service.spreadsheets()
 
-        # ② Streamlit Secrets から取得（Streamlit Cloud / ローカル secrets.toml）
         if hasattr(st, 'secrets') and "gcp_service_account" in st.secrets:
             credentials = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
@@ -85,31 +77,21 @@ def get_google_sheets_client():
             service = build('sheets', 'v4', credentials=credentials)
             return service.spreadsheets()
 
-        # どちらもない場合
         return None
     except Exception as e:
         st.error(f"Google Sheets接続エラー: {str(e)}")
         return None
 
 def get_spreadsheet_id():
-    """
-    スプレッドシートIDを取得。
-    Railway: 環境変数 SPREADSHEET_ID
-    Streamlit: st.secrets["spreadsheet_id"]
-    """
-    # ① 環境変数（Railway）
     sid = os.environ.get("SPREADSHEET_ID", "")
     if sid:
         return sid
-
-    # ② Streamlit secrets
     try:
         return st.secrets.get("spreadsheet_id", "")
     except:
         return ""
 
 def create_spreadsheet_if_needed(sheets_client):
-    """スプレッドシートが存在しない場合は作成"""
     spreadsheet_id = get_spreadsheet_id()
     if not spreadsheet_id:
         st.warning("📝 スプレッドシートIDが設定されていません。新規作成します。")
@@ -136,7 +118,6 @@ def create_spreadsheet_if_needed(sheets_client):
     return spreadsheet_id
 
 def read_sheet(sheets_client, spreadsheet_id, sheet_name, has_header=True):
-    """シートからデータを読み込み"""
     try:
         result = sheets_client.values().get(
             spreadsheetId=spreadsheet_id,
@@ -157,7 +138,6 @@ def read_sheet(sheets_client, spreadsheet_id, sheet_name, has_header=True):
         return pd.DataFrame()
 
 def write_sheet(sheets_client, spreadsheet_id, sheet_name, df, clear_first=True):
-    """シートにデータを書き込み"""
     try:
         values = [df.columns.tolist()] + df.fillna('').astype(str).values.tolist()
         if clear_first:
@@ -178,7 +158,6 @@ def write_sheet(sheets_client, spreadsheet_id, sheet_name, df, clear_first=True)
         return False
 
 def append_to_sheet(sheets_client, spreadsheet_id, sheet_name, row_data):
-    """シートに行を追加"""
     try:
         if isinstance(row_data, pd.DataFrame):
             values = row_data.fillna('').astype(str).values.tolist()
@@ -200,7 +179,6 @@ def append_to_sheet(sheets_client, spreadsheet_id, sheet_name, row_data):
         return False
 
 def init_spreadsheet(sheets_client, spreadsheet_id):
-    """スプレッドシートの初期化（初回のみ）"""
     settings_df = read_sheet(sheets_client, spreadsheet_id, 'settings')
     if len(settings_df) == 0:
         settings_df = pd.DataFrame({
@@ -251,7 +229,6 @@ def init_spreadsheet(sheets_client, spreadsheet_id):
         write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', reason_df)
 
 def load_settings(sheets_client, spreadsheet_id):
-    """設定の読み込み"""
     df = read_sheet(sheets_client, spreadsheet_id, 'settings')
     if len(df) > 0:
         return {
@@ -261,7 +238,6 @@ def load_settings(sheets_client, spreadsheet_id):
     return {'total_capital': 1000000, 'risk_per_trade_pct': 0.2}
 
 def save_settings(sheets_client, spreadsheet_id, total_capital, risk_per_trade_pct):
-    """設定の保存"""
     settings_df = pd.DataFrame({
         'id': [1],
         'total_capital': [total_capital],
@@ -271,7 +247,6 @@ def save_settings(sheets_client, spreadsheet_id, total_capital, risk_per_trade_p
     write_sheet(sheets_client, spreadsheet_id, 'settings', settings_df)
 
 def get_reason_list(sheets_client, spreadsheet_id, reason_type):
-    """根拠リストの取得"""
     df = read_sheet(sheets_client, spreadsheet_id, 'reason_definitions')
     if len(df) > 0:
         df = df[df['reason_type'] == reason_type]
@@ -280,7 +255,6 @@ def get_reason_list(sheets_client, spreadsheet_id, reason_type):
     return pd.DataFrame(columns=['category', 'detail'])
 
 def parse_jp_csv(df):
-    """日本株CSVのパース"""
     numeric_columns = ['数量［株］', '単価［円］', '手数料［円］', '税金等［円］', '受渡金額［円］']
     for col in numeric_columns:
         if col in df.columns:
@@ -293,7 +267,7 @@ def parse_jp_csv(df):
         'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d',
                                           errors='coerce').dt.strftime('%Y-%m-%d'),
         'market': '日本株',
-        'ticker_code': df['銘柄コード'].astype(str),
+        'ticker_code': df['銘柄コード'].astype(str).str.strip(),
         'stock_name': df['銘柄名'],
         'account_type': df['取引区分'],
         'trade_type': df['口座区分'],
@@ -310,7 +284,6 @@ def parse_jp_csv(df):
     return parsed
 
 def parse_us_csv(df):
-    """米国株CSVのパース"""
     numeric_columns = ['数量［株］', '単価［USドル］', '為替レート', '手数料［USドル］', '税金［USドル］', '受渡金額［円］']
     for col in numeric_columns:
         if col in df.columns:
@@ -323,7 +296,7 @@ def parse_us_csv(df):
         'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d',
                                           errors='coerce').dt.strftime('%Y-%m-%d'),
         'market': '米国株',
-        'ticker_code': df['ティッカー'],
+        'ticker_code': df['ティッカー'].astype(str).str.strip(),
         'stock_name': df['銘柄名'],
         'account_type': df['取引区分'],
         'trade_type': df['口座'],
@@ -340,7 +313,6 @@ def parse_us_csv(df):
     return parsed
 
 def load_all_trades(sheets_client, spreadsheet_id):
-    """全トレードデータの読み込み"""
     df = read_sheet(sheets_client, spreadsheet_id, 'trades')
     if len(df) > 0:
         df['trade_date'] = pd.to_datetime(df['trade_date'])
@@ -348,6 +320,19 @@ def load_all_trades(sheets_client, spreadsheet_id):
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
+        # ticker_codeを文字列に統一（スプレッドシートから3179.0のような形で来る場合の対策）
+        if 'ticker_code' in df.columns:
+            df['ticker_code'] = df['ticker_code'].astype(str).str.strip()
+            # "3179.0" → "3179" に変換
+            def clean_ticker(t):
+                try:
+                    f = float(t)
+                    if f == int(f):
+                        return str(int(f))
+                    return t
+                except:
+                    return t
+            df['ticker_code'] = df['ticker_code'].apply(clean_ticker)
     return df
 
 def calculate_position_summary(df):
@@ -355,12 +340,12 @@ def calculate_position_summary(df):
     if len(df) == 0:
         return pd.DataFrame()
 
-    # 現引はtrade_actionが空なので除外しない。ヘッダー行と空行のみ除外
+    # ヘッダー行のみ除外。空文字のtrade_actionは現引なので除外しない
     df = df[df['trade_action'] != '売買区分']
     df = df[df['ticker_code'] != '銘柄コード']
     df = df[df['ticker_code'].notna() & (df['ticker_code'] != '')]
 
-    # 数量・単価を確実に数値変換（スプレッドシートから文字列で来る場合の対策）
+    # 数量・単価を確実に数値変換
     df = df.copy()
     df['quantity'] = pd.to_numeric(
         df['quantity'].astype(str).str.replace(',', '').str.strip(),
@@ -373,13 +358,11 @@ def calculate_position_summary(df):
 
     df_full = df.copy()
 
-    df_spot = df[df['account_type'].isin(['現物', '現引'])]
     df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])]
 
     summary = []
 
     # 現物ポジション
-    # df_spotから現物買付・売付、df_fullから現引・入庫を取得
     spot_tickers = df_full[df_full['account_type'] == '現物']['ticker_code'].unique()
     kenin_tickers = df_full[df_full['account_type'] == '現引']['ticker_code'].unique()
     nyuko_tickers = df_full[df_full['trade_action'] == '入庫']['ticker_code'].unique()
@@ -389,7 +372,7 @@ def calculate_position_summary(df):
         all_rows = df_full[df_full['ticker_code'] == ticker]
         buy_rows = all_rows[all_rows['trade_action'] == '買付']
         sell_rows = all_rows[all_rows['trade_action'] == '売付']
-        kenin_rows = all_rows[(all_rows['account_type'] == '現引') & (all_rows['ticker_code'] == ticker)]
+        kenin_rows = all_rows[all_rows['account_type'] == '現引']
         nyuko_rows = all_rows[all_rows['trade_action'] == '入庫']
 
         buy_qty = buy_rows['quantity'].sum()
@@ -402,7 +385,6 @@ def calculate_position_summary(df):
             prices = buy_rows['price']
             qtys = buy_rows['quantity']
             avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
-            # 銘柄名・市場はall_rowsから取得
             name_rows = all_rows[all_rows['stock_name'].notna() & (all_rows['stock_name'] != '')]
             stock_name = name_rows.iloc[0]['stock_name'] if len(name_rows) > 0 else ticker
             market = name_rows.iloc[0]['market'] if len(name_rows) > 0 else '日本株'
@@ -545,14 +527,6 @@ if sheets_client:
 
             st.divider()
             st.subheader("📦 保有ポジション")
-            # デバッグ表示
-            if len(df_all) > 0:
-                r = df_all[df_all['ticker_code'] == '3179']
-                buy = r[r['trade_action']=='買付']['quantity'].sum()
-                sell = r[r['trade_action']=='売付']['quantity'].sum()
-                kenin = r[r['account_type']=='現引']['quantity'].sum()
-                nyuko = r[r['trade_action']=='入庫']['quantity'].sum()
-                st.warning(f"DEBUG 3179: 買付={buy} 売付={sell} 現引={kenin} 入庫={nyuko} → 残={buy+kenin+nyuko-sell} | quantity型={r['quantity'].dtype}")
             df_positions = calculate_position_summary(df_all)
             if len(df_positions) > 0:
                 st.dataframe(
