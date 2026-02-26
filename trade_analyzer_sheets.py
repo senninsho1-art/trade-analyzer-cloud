@@ -632,24 +632,49 @@ if sheets_client:
                     st.write(f"残あり銘柄数: {len(has_position)}")
                     st.dataframe(has_position, use_container_width=True)
 
+            # manual_positionsシートから手動上書きデータを読み込み
+            manual_pos_df = read_sheet(sheets_client, spreadsheet_id, 'manual_positions')
+
+            # CSVから計算したポジションに手動上書きをマージ
+            if len(df_positions) > 0 and len(manual_pos_df) > 0:
+                manual_pos_df['quantity'] = pd.to_numeric(manual_pos_df['quantity'], errors='coerce').fillna(0)
+                manual_pos_df['avg_price'] = pd.to_numeric(manual_pos_df['avg_price'], errors='coerce').fillna(0)
+                # ticker_code + trade_type をキーにして上書き
+                for _, mrow in manual_pos_df.iterrows():
+                    mask = (
+                        (df_positions['ticker_code'] == mrow['ticker_code']) &
+                        (df_positions['trade_type'] == mrow['trade_type'])
+                    )
+                    if mask.any():
+                        if float(mrow['quantity']) <= 0:
+                            # 数量0以下 → 削除
+                            df_positions = df_positions[~mask]
+                        else:
+                            df_positions.loc[mask, 'quantity'] = int(mrow['quantity'])
+                            df_positions.loc[mask, 'avg_price'] = float(mrow['avg_price'])
+                            df_positions.loc[mask, 'total_cost'] = round(float(mrow['avg_price']) * float(mrow['quantity']), 0)
+                    else:
+                        # 新規行（手動追加）
+                        if float(mrow['quantity']) > 0:
+                            df_positions = pd.concat([df_positions, pd.DataFrame([{
+                                'ticker_code': mrow['ticker_code'],
+                                'stock_name': mrow.get('stock_name', mrow['ticker_code']),
+                                'market': mrow.get('market', '日本株'),
+                                'trade_type': mrow['trade_type'],
+                                'quantity': int(mrow['quantity']),
+                                'avg_price': float(mrow['avg_price']),
+                                'total_cost': round(float(mrow['avg_price']) * float(mrow['quantity']), 0)
+                            }])], ignore_index=True)
+                df_positions = df_positions.sort_values('ticker_code').reset_index(drop=True)
+
             if len(df_positions) > 0:
                 total_count = len(df_positions)
-                st.info(f"保有銘柄数: {total_count}件")
+                st.info(f"保有銘柄数: {total_count}件　　💡 行を直接編集して「変更を保存」で反映。数量を0にすると削除。")
 
-                # ① 日本株現物／日本株信用／米国株 の3タブに分けて表示
-                spot_jp    = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '現物')]
-                margin_jp  = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '信用買')]
-                us_stocks  = df_positions[df_positions['market'] == '米国株']
-
-                col_rename = {
-                    'ticker_code': 'コード',
-                    'stock_name': '銘柄名',
-                    'market': '市場',
-                    'trade_type': '種別',
-                    'quantity': '保有数量',
-                    'avg_price': '平均取得単価',
-                    'total_cost': '総額'
-                }
+                # ① 日本株現物／日本株信用／米国株 の3タブに分けて表示（編集可能）
+                spot_jp   = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '現物')].copy()
+                margin_jp = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '信用買')].copy()
+                us_stocks = df_positions[df_positions['market'] == '米国株'].copy()
 
                 pos_tab1, pos_tab2, pos_tab3 = st.tabs([
                     f"🇯🇵 日本株（現物）{len(spot_jp)}件",
@@ -657,32 +682,82 @@ if sheets_client:
                     f"🇺🇸 米国株 {len(us_stocks)}件"
                 ])
 
+                def render_editable_positions(sub_df, tab_key):
+                    """編集可能なポジションテーブルを描画し、変更をsession_stateに保持"""
+                    if len(sub_df) == 0:
+                        st.info("このカテゴリの保有はありません")
+                        return
+                    display_df = sub_df[['ticker_code','stock_name','market','trade_type','quantity','avg_price','total_cost']].rename(columns={
+                        'ticker_code': 'コード',
+                        'stock_name': '銘柄名',
+                        'market': '市場',
+                        'trade_type': '種別',
+                        'quantity': '保有数量',
+                        'avg_price': '平均取得単価',
+                        'total_cost': '総額'
+                    }).reset_index(drop=True)
+
+                    edited = st.data_editor(
+                        display_df,
+                        use_container_width=True,
+                        num_rows="dynamic",
+                        column_config={
+                            "コード":       st.column_config.TextColumn("コード", width="small"),
+                            "銘柄名":       st.column_config.TextColumn("銘柄名"),
+                            "市場":         st.column_config.TextColumn("市場", width="small"),
+                            "種別":         st.column_config.TextColumn("種別", width="small"),
+                            "保有数量":     st.column_config.NumberColumn("保有数量", min_value=0, step=1, width="small"),
+                            "平均取得単価": st.column_config.NumberColumn("平均取得単価", min_value=0, format="%.2f"),
+                            "総額":         st.column_config.NumberColumn("総額", disabled=True),
+                        },
+                        key=f"editor_{tab_key}"
+                    )
+                    st.session_state[f"edited_{tab_key}"] = edited
+
                 with pos_tab1:
-                    if len(spot_jp) > 0:
-                        st.dataframe(
-                            spot_jp.rename(columns=col_rename).reset_index(drop=True),
-                            use_container_width=True
-                        )
-                    else:
-                        st.info("日本株（現物）の保有はありません")
-
+                    render_editable_positions(spot_jp, "spot_jp")
                 with pos_tab2:
-                    if len(margin_jp) > 0:
-                        st.dataframe(
-                            margin_jp.rename(columns=col_rename).reset_index(drop=True),
-                            use_container_width=True
-                        )
-                    else:
-                        st.info("日本株（信用）の保有はありません")
-
+                    render_editable_positions(margin_jp, "margin_jp")
                 with pos_tab3:
-                    if len(us_stocks) > 0:
-                        st.dataframe(
-                            us_stocks.rename(columns=col_rename).reset_index(drop=True),
-                            use_container_width=True
-                        )
+                    render_editable_positions(us_stocks, "us_stocks")
+
+                st.divider()
+                if st.button("💾 変更を保存", use_container_width=True, type="primary"):
+                    # 3タブの編集結果を結合してmanual_positionsに保存
+                    save_rows = []
+                    tab_configs = [
+                        ("spot_jp",   "現物",  spot_jp),
+                        ("margin_jp", "信用買", margin_jp),
+                        ("us_stocks", "現物",  us_stocks),
+                    ]
+                    for tab_key, trade_type_default, orig_df in tab_configs:
+                        edited_df = st.session_state.get(f"edited_{tab_key}")
+                        if edited_df is None:
+                            continue
+                        for _, erow in edited_df.iterrows():
+                            code = str(erow.get("コード","")).strip()
+                            if not code:
+                                continue
+                            # 元のデータから market/trade_type を取得（編集で変わる可能性を考慮）
+                            orig_match = orig_df[orig_df['ticker_code'] == code]
+                            market_val    = orig_match.iloc[0]['market']    if len(orig_match) > 0 else erow.get("市場","日本株")
+                            tradetype_val = orig_match.iloc[0]['trade_type'] if len(orig_match) > 0 else trade_type_default
+                            save_rows.append({
+                                'ticker_code': code,
+                                'stock_name':  str(erow.get("銘柄名", code)),
+                                'market':      market_val,
+                                'trade_type':  tradetype_val,
+                                'quantity':    float(erow.get("保有数量", 0)),
+                                'avg_price':   float(erow.get("平均取得単価", 0)),
+                                'updated_at':  datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            })
+                    if save_rows:
+                        save_df = pd.DataFrame(save_rows)
+                        if write_sheet(sheets_client, spreadsheet_id, 'manual_positions', save_df):
+                            st.success("✅ 保存しました。ページを再読み込みすると反映されます。")
+                            st.rerun()
                     else:
-                        st.info("米国株の保有はありません")
+                        st.warning("保存するデータがありません")
 
             else:
                 st.info("現在保有中のポジションはありません")
