@@ -390,7 +390,8 @@ def calculate_position_summary(df):
 
         if spot_remaining > 0:
             buy_rows = spot[spot['trade_action'] == '買付']
-            avg_price = (buy_rows['price'] * buy_rows['quantity']).sum() / buy_rows['quantity'].sum()                 if buy_rows['quantity'].sum() > 0 else 0
+            avg_price = (buy_rows['price'] * buy_rows['quantity']).sum() / buy_rows['quantity'].sum() \
+                if buy_rows['quantity'].sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
@@ -409,7 +410,8 @@ def calculate_position_summary(df):
 
         if margin_remaining > 0:
             mbuy_rows = r[r['trade_action'] == '買建']
-            avg_price = (mbuy_rows['price'] * mbuy_rows['quantity']).sum() / mbuy_rows['quantity'].sum()                 if mbuy_rows['quantity'].sum() > 0 else 0
+            avg_price = (mbuy_rows['price'] * mbuy_rows['quantity']).sum() / mbuy_rows['quantity'].sum() \
+                if mbuy_rows['quantity'].sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
@@ -535,6 +537,9 @@ if sheets_client:
                 if year_filter != "全て":
                     df_filtered = df_filtered[df_filtered['trade_date'].dt.year == year_filter]
 
+                # ② 最新の約定日から降順に並び替え
+                df_filtered = df_filtered.sort_values('trade_date', ascending=False)
+
                 display_cols = ['trade_date', 'market', 'ticker_code', 'stock_name', 'trade_action',
                                 'quantity', 'price', 'total_amount']
                 st.dataframe(
@@ -547,7 +552,7 @@ if sheets_client:
                         'quantity': '数量',
                         'price': '単価',
                         'total_amount': '金額'
-                    }),
+                    }).reset_index(drop=True),
                     use_container_width=True,
                     height=400
                 )
@@ -556,19 +561,57 @@ if sheets_client:
             st.subheader("📦 保有ポジション")
             df_positions = calculate_position_summary(df_all)
             if len(df_positions) > 0:
-                st.info(f"保有銘柄数: {len(df_positions)}件")
-                st.dataframe(
-                    df_positions.rename(columns={
-                        'ticker_code': 'コード',
-                        'stock_name': '銘柄名',
-                        'market': '市場',
-                        'quantity': '保有数量',
-                        'avg_price': '平均取得単価',
-                        'total_cost': '総額'
-                    }),
-                    use_container_width=True,
-                    height=1200
-                )
+                total_count = len(df_positions)
+                st.info(f"保有銘柄数: {total_count}件")
+
+                # ① 日本株現物／日本株信用／米国株 の3タブに分けて表示
+                spot_jp    = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '現物')]
+                margin_jp  = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '信用買')]
+                us_stocks  = df_positions[df_positions['market'] == '米国株']
+
+                col_rename = {
+                    'ticker_code': 'コード',
+                    'stock_name': '銘柄名',
+                    'market': '市場',
+                    'trade_type': '種別',
+                    'quantity': '保有数量',
+                    'avg_price': '平均取得単価',
+                    'total_cost': '総額'
+                }
+
+                pos_tab1, pos_tab2, pos_tab3 = st.tabs([
+                    f"🇯🇵 日本株（現物）{len(spot_jp)}件",
+                    f"📊 日本株（信用）{len(margin_jp)}件",
+                    f"🇺🇸 米国株 {len(us_stocks)}件"
+                ])
+
+                with pos_tab1:
+                    if len(spot_jp) > 0:
+                        st.dataframe(
+                            spot_jp.rename(columns=col_rename).reset_index(drop=True),
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("日本株（現物）の保有はありません")
+
+                with pos_tab2:
+                    if len(margin_jp) > 0:
+                        st.dataframe(
+                            margin_jp.rename(columns=col_rename).reset_index(drop=True),
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("日本株（信用）の保有はありません")
+
+                with pos_tab3:
+                    if len(us_stocks) > 0:
+                        st.dataframe(
+                            us_stocks.rename(columns=col_rename).reset_index(drop=True),
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("米国株の保有はありません")
+
             else:
                 st.info("現在保有中のポジションはありません")
             if len(df_all) == 0:
