@@ -336,16 +336,24 @@ def load_all_trades(sheets_client, spreadsheet_id):
     return df
 
 def calculate_position_summary(df):
-    """保有ポジションの計算"""
+    """保有ポジションの計算
+    
+    【データの実際の構造】
+    - account_type = '現物'         → 現物取引
+    - account_type = '信用新規'/'信用返済'/'現引' → 信用取引（現引は楽天の信用口座区分）
+    - trade_action = '入庫'         → 他社移管受け入れ（現物に加算）
+    - 信用取引の計算: 買建 - 売埋
+    - 現物の計算: 買付 + 入庫 - 売付
+    """
     if len(df) == 0:
         return pd.DataFrame()
 
-    # ヘッダー行のみ除外。空文字のtrade_actionは現引なので除外しない
+    # ヘッダー行・空行のみ除外
     df = df[df['trade_action'] != '売買区分']
     df = df[df['ticker_code'] != '銘柄コード']
     df = df[df['ticker_code'].notna() & (df['ticker_code'] != '')]
 
-    # 数量・単価を確実に数値変換
+    # 数値変換
     df = df.copy()
     df['quantity'] = pd.to_numeric(
         df['quantity'].astype(str).str.replace(',', '').str.strip(),
@@ -356,72 +364,59 @@ def calculate_position_summary(df):
         errors='coerce'
     ).fillna(0)
 
-    df_full = df.copy()
+    # 信用口座区分（現引も信用扱い）
+    MARGIN_ACCOUNTS = ['信用新規', '信用返済', '現引']
 
-    df_margin = df[df['account_type'].isin(['信用新規', '信用返済'])]
-
+    all_tickers = df['ticker_code'].unique()
     summary = []
 
-    # 現物ポジション
-    spot_tickers = df_full[df_full['account_type'] == '現物']['ticker_code'].unique()
-    kenin_tickers = df_full[df_full['account_type'] == '現引']['ticker_code'].unique()
-    nyuko_tickers = df_full[df_full['trade_action'] == '入庫']['ticker_code'].unique()
-    all_spot_tickers = set(spot_tickers) | set(kenin_tickers) | set(nyuko_tickers)
+    for ticker in all_tickers:
+        r = df[df['ticker_code'] == ticker]
 
-    for ticker in all_spot_tickers:
-        all_rows = df_full[df_full['ticker_code'] == ticker]
-        buy_rows = all_rows[all_rows['trade_action'] == '買付']
-        sell_rows = all_rows[all_rows['trade_action'] == '売付']
-        kenin_rows = all_rows[all_rows['account_type'] == '現引']
-        nyuko_rows = all_rows[all_rows['trade_action'] == '入庫']
+        # 銘柄名・市場
+        name_rows = r[r['stock_name'].notna() & (r['stock_name'] != '')]
+        stock_name = name_rows.iloc[0]['stock_name'] if len(name_rows) > 0 else ticker
+        market = name_rows.iloc[0]['market'] if len(name_rows) > 0 else '日本株'
 
-        buy_qty = buy_rows['quantity'].sum()
-        sell_qty = sell_rows['quantity'].sum()
-        kenin_qty = kenin_rows['quantity'].sum()
-        nyuko_qty = nyuko_rows['quantity'].sum()
-        remaining = buy_qty + kenin_qty + nyuko_qty - sell_qty
+        # ===== 現物ポジション =====
+        spot = r[r['account_type'] == '現物']
+        buy_qty = spot[spot['trade_action'] == '買付']['quantity'].sum()
+        sell_qty = spot[spot['trade_action'] == '売付']['quantity'].sum()
+        nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
+        spot_remaining = buy_qty + nyuko_qty - sell_qty
 
-        if remaining > 0:
-            prices = buy_rows['price']
-            qtys = buy_rows['quantity']
-            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
-            name_rows = all_rows[all_rows['stock_name'].notna() & (all_rows['stock_name'] != '')]
-            stock_name = name_rows.iloc[0]['stock_name'] if len(name_rows) > 0 else ticker
-            market = name_rows.iloc[0]['market'] if len(name_rows) > 0 else '日本株'
+        if spot_remaining > 0:
+            buy_rows = spot[spot['trade_action'] == '買付']
+            avg_price = (buy_rows['price'] * buy_rows['quantity']).sum() / buy_rows['quantity'].sum() \
+                if buy_rows['quantity'].sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
                 'market': market,
                 'trade_type': '現物',
-                'quantity': int(remaining),
+                'quantity': int(spot_remaining),
                 'avg_price': round(avg_price, 2),
-                'total_cost': round(avg_price * remaining, 0)
+                'total_cost': round(avg_price * spot_remaining, 0)
             })
 
-    # 信用買ポジション
-    for ticker in df_margin['ticker_code'].unique():
-        rows = df_margin[df_margin['ticker_code'] == ticker]
-        buy_rows = rows[rows['trade_action'] == '買建']
-        sell_rows = rows[rows['trade_action'] == '売埋']
-        kenin_rows = df_full[(df_full['account_type'] == '現引') & (df_full['ticker_code'] == ticker)]
+        # ===== 信用買ポジション =====
+        margin = r[r['account_type'].isin(MARGIN_ACCOUNTS)]
+        mbuy_qty = margin[margin['trade_action'] == '買建']['quantity'].sum()
+        msell_qty = margin[margin['trade_action'] == '売埋']['quantity'].sum()
+        margin_remaining = mbuy_qty - msell_qty
 
-        buy_qty = buy_rows['quantity'].sum()
-        sell_qty = sell_rows['quantity'].sum()
-        kenin_qty = kenin_rows['quantity'].sum()
-        remaining = buy_qty - sell_qty - kenin_qty
-
-        if remaining > 0:
-            prices = buy_rows['price']
-            qtys = buy_rows['quantity']
-            avg_price = (prices * qtys).sum() / qtys.sum() if qtys.sum() > 0 else 0
+        if margin_remaining > 0:
+            mbuy_rows = margin[margin['trade_action'] == '買建']
+            avg_price = (mbuy_rows['price'] * mbuy_rows['quantity']).sum() / mbuy_rows['quantity'].sum() \
+                if mbuy_rows['quantity'].sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
-                'stock_name': rows.iloc[0]['stock_name'],
-                'market': rows.iloc[0]['market'],
+                'stock_name': stock_name,
+                'market': market,
                 'trade_type': '信用買',
-                'quantity': int(remaining),
+                'quantity': int(margin_remaining),
                 'avg_price': round(avg_price, 2),
-                'total_cost': round(avg_price * remaining, 0)
+                'total_cost': round(avg_price * margin_remaining, 0)
             })
 
     return pd.DataFrame(summary)
@@ -529,6 +524,7 @@ if sheets_client:
             st.subheader("📦 保有ポジション")
             df_positions = calculate_position_summary(df_all)
             if len(df_positions) > 0:
+                st.info(f"保有銘柄数: {len(df_positions)}件")
                 st.dataframe(
                     df_positions.rename(columns={
                         'ticker_code': 'コード',
@@ -538,7 +534,8 @@ if sheets_client:
                         'avg_price': '平均取得単価',
                         'total_cost': '総額'
                     }),
-                    use_container_width=True
+                    use_container_width=True,
+                    height=1200
                 )
             else:
                 st.info("現在保有中のポジションはありません")
