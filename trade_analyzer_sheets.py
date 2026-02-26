@@ -447,19 +447,17 @@ def calculate_position_summary(df):
             })
 
         # ===== 信用買ポジション（移動平均法）=====
-        # 対象行：買建 + 売埋（現引は信用側からは減算なので売付扱い）
-        margin_r = r[r['trade_action'].isin(['買建', '売埋']) | (r['account_type'] == '現引')]
-        # 現引は信用側では「売却」として扱う（account_typeで識別、sell_actionsに含めない代わりに量を反転）
-        # → 現引行をsell_actions='現引'扱いで処理
+        # 現引は信用側では「売却（売埋と同等）」として時系列で処理する必要がある
+        # account_type==現引 の行を sell_actions に含めるため、一時的に trade_action を設定
+        margin_r = r[r['trade_action'].isin(['買建', '売埋']) | (r['account_type'] == '現引')].copy()
+        # 現引行の trade_action を '売埋' として扱う（信用側からの減算）
+        margin_r.loc[margin_r['account_type'] == '現引', 'trade_action'] = '売埋'
         margin_remaining, margin_avg = calc_moving_avg(
             margin_r,
             buy_actions=['買建'],
             sell_actions=['売埋'],
-            kenin_as_buy=False  # 現引は信用側では減算（後述の特別処理）
+            kenin_as_buy=False
         )
-        # 現引分を手動で差し引く（calc_moving_avg内で処理されないため）
-        kenin_qty = r[r['account_type'] == '現引']['quantity'].sum()
-        margin_remaining = margin_remaining - kenin_qty
 
         if margin_remaining > 0.5:
             summary.append({
@@ -649,6 +647,34 @@ if sheets_client:
                     st.dataframe(margin_r[["trade_date","account_type","trade_action","quantity","price"]], use_container_width=True)
 
             df_positions = calculate_position_summary(df_all)
+
+            # デバッグ：全銘柄の残数量チェック（68件問題の調査）
+            if len(df_all) > 0:
+                with st.expander("🔍 デバッグ2：全銘柄の残数量チェック"):
+                    all_tickers = sorted(df_all["ticker_code"].unique().tolist())
+                    check_rows = []
+                    for t in all_tickers:
+                        r = df_all[df_all["ticker_code"] == t]
+                        buy = r[r["trade_action"] == "買付"]["quantity"].sum()
+                        sell = r[r["trade_action"] == "売付"]["quantity"].sum()
+                        kenin = r[r["account_type"] == "現引"]["quantity"].sum()
+                        mbuy = r[r["trade_action"] == "買建"]["quantity"].sum()
+                        msell = r[r["trade_action"] == "売埋"]["quantity"].sum()
+                        spot_rem = buy + kenin - sell
+                        margin_rem = mbuy - msell - kenin
+                        check_rows.append({
+                            "コード": t,
+                            "現物買付": int(buy), "現物売付": int(sell), "現引": int(kenin),
+                            "現物残": int(spot_rem),
+                            "買建": int(mbuy), "売埋": int(msell),
+                            "信用残": int(margin_rem)
+                        })
+                    check_df = pd.DataFrame(check_rows)
+                    # 残があるものだけ表示
+                    has_position = check_df[(check_df["現物残"] > 0) | (check_df["信用残"] > 0)]
+                    st.write(f"残あり銘柄数: {len(has_position)}")
+                    st.dataframe(has_position, use_container_width=True)
+
             if len(df_positions) > 0:
                 total_count = len(df_positions)
                 st.info(f"保有銘柄数: {total_count}件")
