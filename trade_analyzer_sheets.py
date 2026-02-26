@@ -335,8 +335,44 @@ def load_all_trades(sheets_client, spreadsheet_id):
             df['ticker_code'] = df['ticker_code'].apply(clean_ticker)
     return df
 
+def calc_moving_avg(trades_sorted, buy_actions, sell_actions, kenin_as_buy=False):
+    """
+    移動平均法で平均取得単価と残数量を計算する。
+    楽天証券の「平均取得単価」と同じ計算方式。
+
+    買付のたびに平均コストを更新し、売付時は数量のみ減らす（平均コストは変えない）。
+    現引（kenin_as_buy=True）は買付と同様に加重平均を更新する。
+    """
+    avg = 0.0
+    qty = 0.0
+    for _, row in trades_sorted.iterrows():
+        action = row['trade_action']
+        account = row['account_type']
+        q = float(row['quantity'])
+        p = float(row['price'])
+        if action in buy_actions:
+            # 買付：加重平均を更新
+            total_cost = avg * qty + p * q
+            qty += q
+            avg = total_cost / qty if qty > 0 else 0
+        elif kenin_as_buy and account == '現引':
+            # 現引（信用→現物振替）：建単価で加重平均を更新
+            # priceが0の場合（楽天CSVで単価空欄）は現在の平均コストを引き継ぐ
+            effective_price = p if p > 0 else avg
+            total_cost = avg * qty + effective_price * q
+            qty += q
+            avg = total_cost / qty if qty > 0 else 0
+        elif action in sell_actions:
+            # 売付・売埋：数量を減らすだけ（平均コストは変えない）
+            qty -= q
+            if qty <= 0:
+                qty = 0.0
+                avg = 0.0
+    return qty, avg
+
+
 def calculate_position_summary(df):
-    """保有ポジションの計算
+    """保有ポジションの計算（移動平均法 = 楽天証券の計算方式）
 
     【楽天証券CSVの実際の構造】
     account_type（取引区分）:
@@ -368,6 +404,9 @@ def calculate_position_summary(df):
         errors='coerce'
     ).fillna(0)
 
+    # 日付順にソート（移動平均法のため時系列順が必要）
+    df = df.sort_values('trade_date').reset_index(drop=True)
+
     summary = []
 
     for ticker in df['ticker_code'].unique():
@@ -377,65 +416,67 @@ def calculate_position_summary(df):
         stock_name = name_rows.iloc[0]['stock_name'] if len(name_rows) > 0 else ticker
         market = name_rows.iloc[0]['market'] if len(name_rows) > 0 else '日本株'
 
-        # 現引数量（信用→現物振替：現物残増・信用残減）
-        kenin_qty = r[r['account_type'] == '現引']['quantity'].sum()
-
-        # ===== 現物ポジション =====
-        # 買付 + 入庫 + 現引（振替受け）- 売付
-        # 米国株は account_type が '現物' でない場合も account_type を問わず trade_action で判定
+        # ===== 現物ポジション（移動平均法）=====
+        # 対象行：現物買付 + 入庫 + 現引（振替受け） + 現物売付
         if market == '米国株':
-            buy_qty   = r[r['trade_action'] == '買付']['quantity'].sum()
-            sell_qty  = r[r['trade_action'] == '売付']['quantity'].sum()
-            nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
-            spot_buy_rows = r[r['trade_action'] == '買付']
+            # 米国株は account_type を問わず trade_action で判定
+            spot_r = r[r['trade_action'].isin(['買付', '売付', '入庫']) | (r['account_type'] == '現引')]
         else:
-            spot = r[r['account_type'] == '現物']
-            buy_qty   = spot[spot['trade_action'] == '買付']['quantity'].sum()
-            sell_qty  = spot[spot['trade_action'] == '売付']['quantity'].sum()
-            nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
-            spot_buy_rows = spot[spot['trade_action'] == '買付']
-        spot_remaining = buy_qty + nyuko_qty + kenin_qty - sell_qty
+            spot_r = r[
+                (r['account_type'] == '現物') |
+                (r['trade_action'] == '入庫') |
+                (r['account_type'] == '現引')
+            ]
 
-        if spot_remaining > 0:
-            buy_rows = spot_buy_rows
-            # 現引行（price=建単価）も平均取得単価に含める
-            kenin_rows = r[r['account_type'] == '現引']
-            # 買付 + 現引 を合算して加重平均を計算
-            all_cost_rows = pd.concat([buy_rows, kenin_rows])
-            total_qty = all_cost_rows['quantity'].sum()
-            avg_price = (all_cost_rows['price'] * all_cost_rows['quantity']).sum() / total_qty \
-                if total_qty > 0 else 0
+        spot_remaining, spot_avg = calc_moving_avg(
+            spot_r,
+            buy_actions=['買付', '入庫'],
+            sell_actions=['売付'],
+            kenin_as_buy=True
+        )
+
+        if spot_remaining > 0.5:  # 浮動小数点誤差を考慮
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
                 'market': market,
                 'trade_type': '現物',
-                'quantity': int(spot_remaining),
-                'avg_price': round(avg_price, 2),
-                'total_cost': round(avg_price * spot_remaining, 0)
+                'quantity': round(spot_remaining),
+                'avg_price': round(spot_avg, 2),
+                'total_cost': round(spot_avg * spot_remaining, 0)
             })
 
-        # ===== 信用買ポジション =====
-        # 買建 - 売埋 - 現引（振替分は信用から消える）
-        mbuy_qty  = r[r['trade_action'] == '買建']['quantity'].sum()
-        msell_qty = r[r['trade_action'] == '売埋']['quantity'].sum()
-        margin_remaining = mbuy_qty - msell_qty - kenin_qty
+        # ===== 信用買ポジション（移動平均法）=====
+        # 対象行：買建 + 売埋（現引は信用側からは減算なので売付扱い）
+        margin_r = r[r['trade_action'].isin(['買建', '売埋']) | (r['account_type'] == '現引')]
+        # 現引は信用側では「売却」として扱う（account_typeで識別、sell_actionsに含めない代わりに量を反転）
+        # → 現引行をsell_actions='現引'扱いで処理
+        margin_remaining, margin_avg = calc_moving_avg(
+            margin_r,
+            buy_actions=['買建'],
+            sell_actions=['売埋'],
+            kenin_as_buy=False  # 現引は信用側では減算（後述の特別処理）
+        )
+        # 現引分を手動で差し引く（calc_moving_avg内で処理されないため）
+        kenin_qty = r[r['account_type'] == '現引']['quantity'].sum()
+        margin_remaining = margin_remaining - kenin_qty
 
-        if margin_remaining > 0:
-            mbuy_rows = r[r['trade_action'] == '買建']
-            avg_price = (mbuy_rows['price'] * mbuy_rows['quantity']).sum() / mbuy_rows['quantity'].sum() \
-                if mbuy_rows['quantity'].sum() > 0 else 0
+        if margin_remaining > 0.5:
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
                 'market': market,
                 'trade_type': '信用買',
-                'quantity': int(margin_remaining),
-                'avg_price': round(avg_price, 2),
-                'total_cost': round(avg_price * margin_remaining, 0)
+                'quantity': round(margin_remaining),
+                'avg_price': round(margin_avg, 2),
+                'total_cost': round(margin_avg * margin_remaining, 0)
             })
 
-    return pd.DataFrame(summary)
+    result = pd.DataFrame(summary)
+    if len(result) > 0:
+        # 銘柄コード順にソート
+        result = result.sort_values('ticker_code').reset_index(drop=True)
+    return result
 
 
 
@@ -572,6 +613,21 @@ if sheets_client:
 
             st.divider()
             st.subheader("📦 保有ポジション")
+
+            # デバッグ：銘柄別の生データ確認
+            if len(df_all) > 0:
+                with st.expander("🔍 デバッグ：銘柄別の取引生データ確認"):
+                    debug_ticker = st.selectbox(
+                        "確認する銘柄コード",
+                        sorted(df_all["ticker_code"].unique().tolist()),
+                        key="debug_ticker"
+                    )
+                    debug_r = df_all[df_all["ticker_code"] == debug_ticker].sort_values("trade_date")
+                    st.dataframe(
+                        debug_r[["trade_date","market","account_type","trade_type","trade_action","quantity","price"]],
+                        use_container_width=True
+                    )
+
             df_positions = calculate_position_summary(df_all)
             if len(df_positions) > 0:
                 total_count = len(df_positions)
