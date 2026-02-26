@@ -382,16 +382,29 @@ def calculate_position_summary(df):
 
         # ===== 現物ポジション =====
         # 買付 + 入庫 + 現引（振替受け）- 売付
-        spot = r[r['account_type'] == '現物']
-        buy_qty   = spot[spot['trade_action'] == '買付']['quantity'].sum()
-        sell_qty  = spot[spot['trade_action'] == '売付']['quantity'].sum()
-        nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
+        # 米国株は account_type が '現物' でない場合も account_type を問わず trade_action で判定
+        if market == '米国株':
+            buy_qty   = r[r['trade_action'] == '買付']['quantity'].sum()
+            sell_qty  = r[r['trade_action'] == '売付']['quantity'].sum()
+            nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
+            spot_buy_rows = r[r['trade_action'] == '買付']
+        else:
+            spot = r[r['account_type'] == '現物']
+            buy_qty   = spot[spot['trade_action'] == '買付']['quantity'].sum()
+            sell_qty  = spot[spot['trade_action'] == '売付']['quantity'].sum()
+            nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
+            spot_buy_rows = spot[spot['trade_action'] == '買付']
         spot_remaining = buy_qty + nyuko_qty + kenin_qty - sell_qty
 
         if spot_remaining > 0:
-            buy_rows = spot[spot['trade_action'] == '買付']
-            avg_price = (buy_rows['price'] * buy_rows['quantity']).sum() / buy_rows['quantity'].sum() \
-                if buy_rows['quantity'].sum() > 0 else 0
+            buy_rows = spot_buy_rows
+            # 現引行（price=建単価）も平均取得単価に含める
+            kenin_rows = r[r['account_type'] == '現引']
+            # 買付 + 現引 を合算して加重平均を計算
+            all_cost_rows = pd.concat([buy_rows, kenin_rows])
+            total_qty = all_cost_rows['quantity'].sum()
+            avg_price = (all_cost_rows['price'] * all_cost_rows['quantity']).sum() / total_qty \
+                if total_qty > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
