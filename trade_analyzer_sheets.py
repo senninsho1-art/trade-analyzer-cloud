@@ -337,24 +337,28 @@ def load_all_trades(sheets_client, spreadsheet_id):
 
 def calculate_position_summary(df):
     """保有ポジションの計算
-    
-    【データの実際の構造】
-    - account_type = '現物'         → 現物取引
-    - account_type = '信用新規'/'信用返済'/'現引' → 信用取引（現引は楽天の信用口座区分）
-    - trade_action = '入庫'         → 他社移管受け入れ（現物に加算）
-    - 信用取引の計算: 買建 - 売埋
-    - 現物の計算: 買付 + 入庫 - 売付
+
+    【楽天証券CSVの実際の構造】
+    account_type（取引区分）:
+      '現物'     → 現物取引（買付/売付）
+      '信用新規'  → 信用新規建て（買建）
+      '信用返済'  → 信用返済（売埋）
+      '現引'     → 信用建玉を現物に振替（売買区分はNaN）
+                   → 現物残に加算 かつ 信用残から減算
+
+    trade_action（売買区分）:
+      '買付'/'売付' → 現物の売買
+      '買建'/'売埋' → 信用ロングの新規/返済
+      '入庫'        → 他社からの株式移管（現物に加算）
+      NaN           → 現引（account_typeで判断）
     """
     if len(df) == 0:
         return pd.DataFrame()
 
-    # ヘッダー行・空行のみ除外
-    df = df[df['trade_action'] != '売買区分']
+    df = df[df['trade_action'] != '売買区分'].copy()
     df = df[df['ticker_code'] != '銘柄コード']
     df = df[df['ticker_code'].notna() & (df['ticker_code'] != '')]
 
-    # 数値変換
-    df = df.copy()
     df['quantity'] = pd.to_numeric(
         df['quantity'].astype(str).str.replace(',', '').str.strip(),
         errors='coerce'
@@ -364,31 +368,29 @@ def calculate_position_summary(df):
         errors='coerce'
     ).fillna(0)
 
-    # 信用口座区分（現引も信用扱い）
-    MARGIN_ACCOUNTS = ['信用新規', '信用返済', '現引']
-
-    all_tickers = df['ticker_code'].unique()
     summary = []
 
-    for ticker in all_tickers:
+    for ticker in df['ticker_code'].unique():
         r = df[df['ticker_code'] == ticker]
 
-        # 銘柄名・市場
         name_rows = r[r['stock_name'].notna() & (r['stock_name'] != '')]
         stock_name = name_rows.iloc[0]['stock_name'] if len(name_rows) > 0 else ticker
         market = name_rows.iloc[0]['market'] if len(name_rows) > 0 else '日本株'
 
+        # 現引数量（信用→現物振替：現物残増・信用残減）
+        kenin_qty = r[r['account_type'] == '現引']['quantity'].sum()
+
         # ===== 現物ポジション =====
+        # 買付 + 入庫 + 現引（振替受け）- 売付
         spot = r[r['account_type'] == '現物']
-        buy_qty = spot[spot['trade_action'] == '買付']['quantity'].sum()
-        sell_qty = spot[spot['trade_action'] == '売付']['quantity'].sum()
+        buy_qty   = spot[spot['trade_action'] == '買付']['quantity'].sum()
+        sell_qty  = spot[spot['trade_action'] == '売付']['quantity'].sum()
         nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
-        spot_remaining = buy_qty + nyuko_qty - sell_qty
+        spot_remaining = buy_qty + nyuko_qty + kenin_qty - sell_qty
 
         if spot_remaining > 0:
             buy_rows = spot[spot['trade_action'] == '買付']
-            avg_price = (buy_rows['price'] * buy_rows['quantity']).sum() / buy_rows['quantity'].sum() \
-                if buy_rows['quantity'].sum() > 0 else 0
+            avg_price = (buy_rows['price'] * buy_rows['quantity']).sum() / buy_rows['quantity'].sum()                 if buy_rows['quantity'].sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
@@ -400,15 +402,14 @@ def calculate_position_summary(df):
             })
 
         # ===== 信用買ポジション =====
-        margin = r[r['account_type'].isin(MARGIN_ACCOUNTS)]
-        mbuy_qty = margin[margin['trade_action'] == '買建']['quantity'].sum()
-        msell_qty = margin[margin['trade_action'] == '売埋']['quantity'].sum()
-        margin_remaining = mbuy_qty - msell_qty
+        # 買建 - 売埋 - 現引（振替分は信用から消える）
+        mbuy_qty  = r[r['trade_action'] == '買建']['quantity'].sum()
+        msell_qty = r[r['trade_action'] == '売埋']['quantity'].sum()
+        margin_remaining = mbuy_qty - msell_qty - kenin_qty
 
         if margin_remaining > 0:
-            mbuy_rows = margin[margin['trade_action'] == '買建']
-            avg_price = (mbuy_rows['price'] * mbuy_rows['quantity']).sum() / mbuy_rows['quantity'].sum() \
-                if mbuy_rows['quantity'].sum() > 0 else 0
+            mbuy_rows = r[r['trade_action'] == '買建']
+            avg_price = (mbuy_rows['price'] * mbuy_rows['quantity']).sum() / mbuy_rows['quantity'].sum()                 if mbuy_rows['quantity'].sum() > 0 else 0
             summary.append({
                 'ticker_code': ticker,
                 'stock_name': stock_name,
@@ -420,6 +421,7 @@ def calculate_position_summary(df):
             })
 
     return pd.DataFrame(summary)
+
 
 
 # ==================== メイン ====================
