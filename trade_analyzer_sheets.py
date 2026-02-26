@@ -625,8 +625,28 @@ if sheets_client:
                     debug_r = df_all[df_all["ticker_code"] == debug_ticker].sort_values("trade_date")
                     st.dataframe(
                         debug_r[["trade_date","market","account_type","trade_type","trade_action","quantity","price"]],
+                        use_container_width=True,
+                        height=300
+                    )
+                    # 集計サマリー
+                    st.markdown("**account_type / trade_action の組み合わせ一覧:**")
+                    st.dataframe(
+                        debug_r.groupby(["account_type","trade_action"], dropna=False)["quantity"].sum().reset_index(),
                         use_container_width=True
                     )
+                    # ポジション計算のデバッグ
+                    from io import StringIO
+                    import sys
+                    spot_r = debug_r[
+                        (debug_r["account_type"] == "現物") |
+                        (debug_r["trade_action"] == "入庫") |
+                        (debug_r["account_type"] == "現引")
+                    ].sort_values("trade_date")
+                    st.markdown("**現物計算対象行:**")
+                    st.dataframe(spot_r[["trade_date","account_type","trade_action","quantity","price"]], use_container_width=True)
+                    margin_r = debug_r[debug_r["trade_action"].isin(["買建","売埋"]) | (debug_r["account_type"] == "現引")].sort_values("trade_date")
+                    st.markdown("**信用計算対象行:**")
+                    st.dataframe(margin_r[["trade_date","account_type","trade_action","quantity","price"]], use_container_width=True)
 
             df_positions = calculate_position_summary(df_all)
             if len(df_positions) > 0:
