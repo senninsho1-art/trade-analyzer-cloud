@@ -443,43 +443,73 @@ if sheets_client:
         # ========== タブ1: データ管理 ==========
         with tab1:
             st.header("データ管理")
-            col1, col2 = st.columns(2)
 
+            # ===== 推奨：全件差し替えインポート =====
+            st.subheader("📥 CSVインポート（推奨：全件差し替え）")
+            st.info(
+                "**使い方：** トレードのたびに楽天証券から「全期間」のCSVをダウンロードし、"
+                "日本株・米国株の両方をアップロードして「全件差し替えインポート」を押してください。"
+                "スプレッドシートの取引データを最新CSVで丸ごと上書きします（重複しません）。"
+            )
+            col1, col2 = st.columns(2)
             with col1:
-                st.subheader("日本株CSV")
+                st.markdown("**① 日本株CSV**")
                 jp_file = st.file_uploader("日本株CSVをアップロード", type=['csv'], key='jp_csv')
                 if jp_file:
                     df_jp = pd.read_csv(jp_file, encoding='cp932')
-                    st.info(f"読込: {len(df_jp)}件")
-                    if st.button("日本株をインポート", key='import_jp'):
-                        with st.spinner('インポート中...'):
-                            parsed = parse_jp_csv(df_jp)
-                            existing = read_sheet(sheets_client, spreadsheet_id, 'trades')
-                            if len(existing) > 0:
-                                combined = pd.concat([existing, parsed], ignore_index=True)
-                            else:
-                                combined = parsed
-                            if write_sheet(sheets_client, spreadsheet_id, 'trades', combined):
-                                st.success(f"✅ {len(parsed)}件をインポートしました")
-                                st.rerun()
-
+                    st.success(f"読込: {len(df_jp)}件 ✅")
             with col2:
-                st.subheader("米国株CSV")
+                st.markdown("**② 米国株CSV**")
                 us_file = st.file_uploader("米国株CSVをアップロード", type=['csv'], key='us_csv')
                 if us_file:
                     df_us = pd.read_csv(us_file, encoding='cp932')
-                    st.info(f"読込: {len(df_us)}件")
-                    if st.button("米国株をインポート", key='import_us'):
-                        with st.spinner('インポート中...'):
-                            parsed = parse_us_csv(df_us)
-                            existing = read_sheet(sheets_client, spreadsheet_id, 'trades')
-                            if len(existing) > 0:
-                                combined = pd.concat([existing, parsed], ignore_index=True)
-                            else:
-                                combined = parsed
-                            if write_sheet(sheets_client, spreadsheet_id, 'trades', combined):
-                                st.success(f"✅ {len(parsed)}件をインポートしました")
-                                st.rerun()
+                    st.success(f"読込: {len(df_us)}件 ✅")
+
+            if jp_file or us_file:
+                st.warning("⚠️ 「全件差し替えインポート」を押すと、既存の取引データがすべて上書きされます。")
+                if st.button("🔄 全件差し替えインポート（推奨）", use_container_width=True, type="primary"):
+                    with st.spinner('インポート中...'):
+                        parts = []
+                        if jp_file:
+                            parts.append(parse_jp_csv(df_jp))
+                        if us_file:
+                            parts.append(parse_us_csv(df_us))
+                        combined = pd.concat(parts, ignore_index=True) if len(parts) > 1 else parts[0]
+                        if write_sheet(sheets_client, spreadsheet_id, 'trades', combined, clear_first=True):
+                            st.success(f"✅ {len(combined)}件をインポートしました（既存データを上書き）")
+                            st.rerun()
+
+            st.divider()
+
+            with st.expander("➕ 差分追加インポート（上級者向け・重複注意）"):
+                st.warning("⚠️ 同じ期間のCSVを2回追加すると数量が2倍になります。")
+                col1, col2 = st.columns(2)
+                with col1:
+                    jp_add = st.file_uploader("日本株CSV（追加用）", type=['csv'], key='jp_add')
+                    if jp_add:
+                        df_jp_add = pd.read_csv(jp_add, encoding='cp932')
+                        st.info(f"読込: {len(df_jp_add)}件")
+                        if st.button("日本株を追加", key='add_jp'):
+                            with st.spinner('追加中...'):
+                                parsed = parse_jp_csv(df_jp_add)
+                                existing = read_sheet(sheets_client, spreadsheet_id, 'trades')
+                                combined = pd.concat([existing, parsed], ignore_index=True) if len(existing) > 0 else parsed
+                                if write_sheet(sheets_client, spreadsheet_id, 'trades', combined):
+                                    st.success(f"✅ {len(parsed)}件を追加しました")
+                                    st.rerun()
+                with col2:
+                    us_add = st.file_uploader("米国株CSV（追加用）", type=['csv'], key='us_add')
+                    if us_add:
+                        df_us_add = pd.read_csv(us_add, encoding='cp932')
+                        st.info(f"読込: {len(df_us_add)}件")
+                        if st.button("米国株を追加", key='add_us'):
+                            with st.spinner('追加中...'):
+                                parsed = parse_us_csv(df_us_add)
+                                existing = read_sheet(sheets_client, spreadsheet_id, 'trades')
+                                combined = pd.concat([existing, parsed], ignore_index=True) if len(existing) > 0 else parsed
+                                if write_sheet(sheets_client, spreadsheet_id, 'trades', combined):
+                                    st.success(f"✅ {len(parsed)}件を追加しました")
+                                    st.rerun()
 
             st.divider()
             st.subheader("📋 全トレード履歴")
