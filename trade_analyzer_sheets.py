@@ -978,13 +978,13 @@ if sheets_client:
                             st.markdown(f"""
 <div style="background:#1a1f2e;border:1px solid #2d3348;border-radius:8px;padding:10px 12px;margin-bottom:6px;">
   <div style="display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-size:1.05rem;font-weight:bold;color:#fff;">{ticker}　<span style="font-size:0.8rem;color:#aaa;font-weight:normal;">{name}</span></span>
-    <span style="font-size:0.8rem;color:#888;">{date_str}</span>
+    <span style="font-size:1.05rem;font-weight:bold;color:#ffffff;">{ticker}　<span style="font-size:0.8rem;color:#cccccc;font-weight:normal;">{name}</span></span>
+    <span style="font-size:0.8rem;color:#bbbbbb;">{date_str}</span>
   </div>
   <div style="display:flex;gap:20px;margin-top:6px;flex-wrap:wrap;">
-    <div><div style="font-size:0.65rem;color:#888;">建数量</div><div style="font-size:0.9rem;font-weight:600;">{qty}株</div></div>
-    <div><div style="font-size:0.65rem;color:#888;">建単価</div><div style="font-size:0.9rem;font-weight:600;">¥{price:,.1f}</div></div>
-    <div><div style="font-size:0.65rem;color:#888;">建玉金額</div><div style="font-size:0.9rem;font-weight:600;">¥{price*qty:,.0f}</div></div>
+    <div><div style="font-size:0.65rem;color:#aaaaaa;">建数量</div><div style="font-size:0.95rem;font-weight:700;color:#ffffff;">{qty}株</div></div>
+    <div><div style="font-size:0.65rem;color:#aaaaaa;">建単価</div><div style="font-size:0.95rem;font-weight:700;color:#ffffff;">¥{price:,.1f}</div></div>
+    <div><div style="font-size:0.65rem;color:#aaaaaa;">建玉金額</div><div style="font-size:0.95rem;font-weight:700;color:#ffffff;">¥{price*qty:,.0f}</div></div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1212,30 +1212,30 @@ if sheets_client:
 <div style="background:#1a1f2e;border:1px solid #2d3348;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
     <div>
-      <span style="font-size:1.1rem;font-weight:bold;color:#fff;">{row['ticker_code']}</span>
-      <span style="font-size:0.82rem;color:#aaa;margin-left:8px;">{row['stock_name']}</span>
+      <span style="font-size:1.1rem;font-weight:bold;color:#ffffff;">{row['ticker_code']}</span>
+      <span style="font-size:0.82rem;color:#cccccc;margin-left:8px;">{row['stock_name']}</span>
     </div>
-    <span style="font-size:0.75rem;color:#666;">{row['entry_date']}</span>
+    <span style="font-size:0.75rem;color:#bbbbbb;">{row['entry_date']}</span>
   </div>
-  <div style="display:flex;gap:0;border:1px solid #2d3348;border-radius:8px;overflow:hidden;text-align:center;">
-    <div style="flex:1;padding:8px 4px;border-right:1px solid #2d3348;">
-      <div style="font-size:0.62rem;color:#888;">建数量</div>
-      <div style="font-size:1.0rem;font-weight:700;color:#fff;">{qty}<span style="font-size:0.65rem;color:#888;">株</span></div>
+  <div style="display:flex;gap:0;border:1px solid #3a3f55;border-radius:8px;overflow:hidden;text-align:center;">
+    <div style="flex:1;padding:8px 4px;border-right:1px solid #3a3f55;">
+      <div style="font-size:0.62rem;color:#aaaaaa;">建数量</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#ffffff;">{qty}<span style="font-size:0.65rem;color:#cccccc;">株</span></div>
     </div>
-    <div style="flex:1.5;padding:8px 4px;border-right:1px solid #2d3348;">
-      <div style="font-size:0.62rem;color:#888;">建単価</div>
-      <div style="font-size:1.0rem;font-weight:700;color:#fff;">¥{entry_p:,.1f}</div>
+    <div style="flex:1.5;padding:8px 4px;border-right:1px solid #3a3f55;">
+      <div style="font-size:0.62rem;color:#aaaaaa;">建単価</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#ffffff;">¥{entry_p:,.1f}</div>
     </div>
-    <div style="flex:1.5;padding:8px 4px;border-right:1px solid #2d3348;">
-      <div style="font-size:0.62rem;color:#888;">損切価格</div>
-      <div style="font-size:1.0rem;font-weight:700;color:#ef8c8c;">¥{stop_p:,.1f}</div>
+    <div style="flex:1.5;padding:8px 4px;border-right:1px solid #3a3f55;">
+      <div style="font-size:0.62rem;color:#aaaaaa;">損切価格</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#ff8080;">¥{stop_p:,.1f}</div>
     </div>
     <div style="flex:1.5;padding:8px 4px;">
-      <div style="font-size:0.62rem;color:#888;">最大損失</div>
-      <div style="font-size:1.0rem;font-weight:700;color:#ef553b;">¥{max_loss:,.0f}</div>
+      <div style="font-size:0.62rem;color:#aaaaaa;">最大損失</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#ff6060;">¥{max_loss:,.0f}</div>
     </div>
   </div>
-  <div style="font-size:0.7rem;color:#666;margin-top:6px;">
+  <div style="font-size:0.7rem;color:#bbbbbb;margin-top:6px;border-top:1px solid #2d3348;padding-top:4px;">
     📌 {row['entry_reason_category']} / {row['entry_reason_detail']}　　✂️ {row['stop_loss_reason']}
   </div>
 </div>
