@@ -278,11 +278,13 @@ def load_settings(sheets_client, spreadsheet_id):
 
 def save_settings(sheets_client, spreadsheet_id, total_capital, risk_per_trade_pct):
     settings_df = pd.DataFrame({
-        'id': [1], 'total_capital': [total_capital],
-        'risk_per_trade_pct': [risk_per_trade_pct],
+        'id': [1],
+        'total_capital': [int(total_capital)],
+        'risk_per_trade_pct': [float(risk_per_trade_pct)],
         'updated_at': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
     })
-    write_sheet(sheets_client, spreadsheet_id, 'settings', settings_df)
+    result = write_sheet(sheets_client, spreadsheet_id, 'settings', settings_df)
+    return result
 
 def get_reason_list(sheets_client, spreadsheet_id, reason_type):
     df = read_sheet(sheets_client, spreadsheet_id, 'reason_definitions')
@@ -1176,7 +1178,25 @@ if sheets_client:
 </div>
 """, unsafe_allow_html=True)
 
-                    col_close, col_dummy = st.columns([1, 3])
+                    col_close, col_del, col_dummy = st.columns([1, 1, 2])
+                    with col_del:
+                        if st.button("🗑 削除", key=f"del_{idx}", use_container_width=True):
+                            st.session_state[f"deleting_{idx}"] = True
+                            st.rerun()
+                    if st.session_state.get(f"deleting_{idx}", False):
+                        st.warning(f"⚠️ {row['ticker_code']} {row['stock_name']} を削除しますか？")
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button("はい、削除する", key=f"del_yes_{idx}", use_container_width=True):
+                                df_active.loc[idx, 'is_active'] = '0'
+                                write_sheet(sheets_client, spreadsheet_id, 'active_trades', df_active)
+                                del st.session_state[f"deleting_{idx}"]
+                                st.success("削除しました")
+                                st.rerun()
+                        with col_no:
+                            if st.button("キャンセル", key=f"del_no_{idx}", use_container_width=True):
+                                del st.session_state[f"deleting_{idx}"]
+                                st.rerun()
                     with col_close:
                         if st.button("💴 決済", key=f"close_{idx}", use_container_width=True):
                             st.session_state[f"closing_{idx}"] = True
@@ -1386,9 +1406,12 @@ if sheets_client:
             st.metric("1トレードの許容損失額", f"¥{risk_amount:,.0f}")
 
             if st.button("💾 設定を保存", use_container_width=True):
-                save_settings(sheets_client, spreadsheet_id, total_capital, risk_pct)
-                st.success("✅ 設定を保存しました")
-                st.rerun()
+                ok = save_settings(sheets_client, spreadsheet_id, total_capital, risk_pct)
+                if ok:
+                    st.success(f"✅ 保存しました（総資産: ¥{total_capital:,.0f} / リスク: {risk_pct:.1f}%）")
+                    st.rerun()
+                else:
+                    st.error("❌ 保存失敗。Sheets接続を確認してください")
 
             st.divider()
             st.subheader("🔢 適正株数計算機")
