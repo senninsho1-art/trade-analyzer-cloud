@@ -18,38 +18,78 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# カスタムCSS（モバイルファースト）
+# カスタムCSS（スマホ最適化）
 st.markdown("""
 <style>
+/* ===== 全体レイアウト ===== */
 .main .block-container {
-    padding-top: 1rem;
+    padding-top: 0.5rem;
     padding-bottom: 1rem;
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
     max-width: 100%;
 }
-.stButton button {
-    width: 100%;
-    height: 50px;
-    font-size: 16px;
-    margin: 5px 0;
+
+/* ===== タイトルを小さく ===== */
+h1 {
+    font-size: 1.2rem !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
 }
-.stTextInput input, .stNumberInput input, .stSelectbox select {
-    height: 50px;
-    font-size: 16px;
+.stCaption {
+    margin-top: 0 !important;
+    font-size: 0.7rem !important;
+}
+
+/* ===== タブをスクロール時も上部固定 ===== */
+.stTabs [data-baseweb="tab-list"] {
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    background-color: #0e1117;
+    padding: 4px 0;
+    border-bottom: 1px solid #333;
 }
 .stTabs [data-baseweb="tab-list"] button {
-    font-size: 16px;
-    padding: 15px;
+    font-size: 13px !important;
+    padding: 10px 8px !important;
+    min-width: 0 !important;
 }
-.metric-card {
-    background-color: #f0f2f6;
-    padding: 15px;
-    border-radius: 10px;
-    margin: 10px 0;
+
+/* ===== ボタン ===== */
+.stButton button {
+    width: 100%;
+    height: 48px;
+    font-size: 15px;
+    margin: 4px 0;
+    border-radius: 8px;
 }
+
+/* ===== 入力フィールド ===== */
+.stTextInput input, .stNumberInput input {
+    height: 46px;
+    font-size: 15px;
+}
+
+/* ===== データテーブル ===== */
 .dataframe {
-    font-size: 14px;
+    font-size: 13px;
+}
+
+/* ===== 最終インポート日時の小さいテキスト ===== */
+.import-date {
+    font-size: 0.72rem;
+    color: #888;
+    margin-top: 4px;
+    text-align: center;
+}
+
+/* ===== セクションヘッダーをコンパクトに ===== */
+h2 {
+    font-size: 1.1rem !important;
+}
+h3 {
+    font-size: 1.0rem !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -529,12 +569,12 @@ if sheets_client:
     if spreadsheet_id:
         init_spreadsheet(sheets_client, spreadsheet_id)
 
-        st.title("📊 トレード分析＆資金管理")
-        st.caption("🔗 Google Sheets連携版")
+        st.markdown("### 📊 トレード分析＆資金管理")
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📥 データ管理",
-            "💰 資金管理",
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            "📥 データ",
+            "📦 ポジション",
+            "💰 資金",
             "📈 アクティブ",
             "📊 分析",
             "⚙️ 設定"
@@ -542,15 +582,25 @@ if sheets_client:
 
         # ========== タブ1: データ管理 ==========
         with tab1:
-            st.header("データ管理")
+            st.subheader("📥 CSVインポート")
 
-            # ===== 推奨：全件差し替えインポート =====
-            st.subheader("📥 CSVインポート（推奨：全件差し替え）")
-            st.info(
-                "**使い方：** トレードのたびに楽天証券から「全期間」のCSVをダウンロードし、"
-                "日本株・米国株の両方をアップロードして「全件差し替えインポート」を押してください。"
-                "スプレッドシートの取引データを最新CSVで丸ごと上書きします（重複しません）。"
-            )
+            # 使い方をexpanderで折りたたみ
+            with st.expander("📖 使い方を見る"):
+                st.markdown(
+                    "1. 楽天証券 → 取引履歴 → **全期間** でCSVダウンロード\n"
+                    "2. 日本株・米国株の両方をアップロード\n"
+                    "3. 「全件差し替えインポート」を押す\n\n"
+                    "⚠️ **全期間**を選ばないと平均取得単価がずれます"
+                )
+
+            # 最終インポート日時を取得して表示
+            last_import_date = ""
+            df_trades_check = read_sheet(sheets_client, spreadsheet_id, 'trades')
+            if len(df_trades_check) > 0 and 'created_at' in df_trades_check.columns:
+                last_dates = df_trades_check['created_at'].dropna()
+                if len(last_dates) > 0:
+                    last_import_date = last_dates.iloc[-1]
+
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**① 日本株CSV**")
@@ -566,8 +616,8 @@ if sheets_client:
                     st.success(f"読込: {len(df_us)}件 ✅")
 
             if jp_file or us_file:
-                st.warning("⚠️ 「全件差し替えインポート」を押すと、既存の取引データがすべて上書きされます。")
-                if st.button("🔄 全件差し替えインポート（推奨）", use_container_width=True, type="primary"):
+                st.warning("⚠️ 既存の取引データがすべて上書きされます")
+                if st.button("🔄 全件差し替えインポート", use_container_width=True, type="primary"):
                     with st.spinner('インポート中...'):
                         parts = []
                         if jp_file:
@@ -576,8 +626,17 @@ if sheets_client:
                             parts.append(parse_us_csv(df_us))
                         combined = pd.concat(parts, ignore_index=True) if len(parts) > 1 else parts[0]
                         if write_sheet(sheets_client, spreadsheet_id, 'trades', combined, clear_first=True):
-                            st.success(f"✅ {len(combined)}件をインポートしました（既存データを上書き）")
+                            st.success(f"✅ {len(combined)}件をインポートしました")
                             st.rerun()
+            else:
+                if st.button("🔄 全件差し替えインポート", use_container_width=True, type="primary", disabled=True):
+                    pass
+
+            # 最終インポート日時を小さく表示
+            if last_import_date:
+                st.markdown(f'<div class="import-date">最終インポート: {last_import_date}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="import-date">最終インポート: なし</div>', unsafe_allow_html=True)
 
             st.divider()
 
@@ -615,7 +674,7 @@ if sheets_client:
             st.subheader("📋 全トレード履歴")
             df_all = load_all_trades(sheets_client, spreadsheet_id)
             if len(df_all) > 0:
-                st.info(f"総件数: {len(df_all)}件")
+                st.caption(f"総件数: {len(df_all)}件")
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     market_filter = st.selectbox("市場", ["全て"] + list(df_all['market'].unique()))
@@ -633,7 +692,6 @@ if sheets_client:
                 if year_filter != "全て":
                     df_filtered = df_filtered[df_filtered['trade_date'].dt.year == year_filter]
 
-                # 最新の約定日から降順に並び替え
                 df_filtered = df_filtered.sort_values('trade_date', ascending=False)
 
                 display_cols = ['trade_date', 'market', 'ticker_code', 'stock_name', 'trade_action',
@@ -652,9 +710,16 @@ if sheets_client:
                     use_container_width=True,
                     height=400
                 )
+            else:
+                st.info("データがありません。CSVファイルをインポートしてください。")
 
-            st.divider()
+        # ========== タブ2: 保有ポジション ==========
+        with tab2:
             st.subheader("📦 保有ポジション")
+
+            # df_allがタブ1で読み込まれていない場合に備えて再取得
+            if 'df_all' not in dir() or df_all is None:
+                df_all = load_all_trades(sheets_client, spreadsheet_id)
 
             # デバッグ：銘柄別の生データ確認
             if len(df_all) > 0:
@@ -670,13 +735,11 @@ if sheets_client:
                         use_container_width=True,
                         height=300
                     )
-                    # 集計サマリー
                     st.markdown("**account_type / trade_action の組み合わせ一覧:**")
                     st.dataframe(
                         debug_r.groupby(["account_type","trade_action"], dropna=False)["quantity"].sum().reset_index(),
                         use_container_width=True
                     )
-                    # ポジション計算のデバッグ
                     spot_r = debug_r[
                         ((debug_r["account_type"] == "現物") & debug_r["trade_action"].isin(["買付", "売付"])) |
                         (debug_r["trade_action"] == "入庫") |
@@ -693,7 +756,7 @@ if sheets_client:
 
             df_positions = calculate_position_summary(df_all)
 
-            # デバッグ：全銘柄の残数量チェック
+            # デバッグ2：全銘柄の残数量チェック
             if len(df_all) > 0:
                 with st.expander("🔍 デバッグ2：全銘柄の残数量チェック"):
                     all_tickers = sorted(df_all["ticker_code"].unique().tolist())
@@ -864,9 +927,9 @@ if sheets_client:
             if len(df_all) == 0:
                 st.info("データがありません。CSVファイルをインポートしてください。")
 
-        # ========== タブ2: 資金管理 ==========
-        with tab2:
-            st.header("💰 資金管理ダッシュボード")
+        # ========== タブ3: 資金管理 ==========
+        with tab3:
+            st.subheader("💰 資金管理")
             settings = load_settings(sheets_client, spreadsheet_id)
 
             st.subheader("総資産設定")
@@ -927,9 +990,9 @@ if sheets_client:
             elif calc_current_price > 0 and calc_stop_loss >= calc_current_price:
                 st.warning("⚠️ 損切り価格は現在価格より低く設定してください")
 
-        # ========== タブ3: アクティブトレード ==========
-        with tab3:
-            st.header("📈 アクティブトレード管理")
+        # ========== タブ4: アクティブトレード ==========
+        with tab4:
+            st.subheader("📈 アクティブトレード")
 
             with st.expander("➕ 新規ポジション登録", expanded=False):
                 entry_ticker = st.text_input("銘柄コード", key="entry_ticker")
@@ -1114,9 +1177,9 @@ if sheets_client:
             if len(df_active) == 0:
                 st.info("アクティブなポジションはありません")
 
-        # ========== タブ4: 分析 ==========
-        with tab4:
-            st.header("📊 トレード分析")
+        # ========== タブ5: 分析 ==========
+        with tab5:
+            st.subheader("📊 トレード分析")
             df_closed = read_sheet(sheets_client, spreadsheet_id, 'closed_trades')
             if len(df_closed) > 0:
                 df_closed['entry_date'] = pd.to_datetime(df_closed['entry_date'])
@@ -1219,9 +1282,9 @@ if sheets_client:
             else:
                 st.info("決済済みトレードがありません")
 
-        # ========== タブ5: 設定 ==========
-        with tab5:
-            st.header("⚙️ 設定")
+        # ========== タブ6: 設定 ==========
+        with tab6:
+            st.subheader("⚙️ 設定")
             st.subheader("根拠リストのカスタマイズ")
             reason_type = st.selectbox(
                 "編集する根拠タイプ",
