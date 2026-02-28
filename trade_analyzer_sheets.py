@@ -360,23 +360,25 @@ def calc_avg_price(rows_sorted, buy_actions, sell_action, kenin_sell=False):
     for _, row in rows_sorted.iterrows():
         action = str(row.get('trade_action', ''))
         acct   = str(row.get('account_type', ''))
-        q = float(row['quantity'])
-        p = float(row['price'])
+        q = float(row['quantity']) if not pd.isna(row['quantity']) else 0.0
+        p = float(row['price']) if not pd.isna(row['price']) else 0.0
         is_kenin = (acct == '現引')
 
         if action in buy_actions:
+            # 買付/入庫/買建：加重平均を更新
             total_cost = avg * qty + p * q
             qty += q
-            avg = total_cost / qty if qty > 0 else 0
+            avg = total_cost / qty if qty > 0 else 0.0
 
         elif is_kenin and not kenin_sell:
             # 現引（現物側）：建単価で加重平均を更新。price=0なら現在のavgを引き継ぐ
             effective_p = p if p > 0 else avg
             total_cost = avg * qty + effective_p * q
             qty += q
-            avg = total_cost / qty if qty > 0 else 0
+            avg = total_cost / qty if qty > 0 else 0.0
 
         elif action == sell_action or (is_kenin and kenin_sell):
+            # 売付/売埋/現引（信用側）：数量を減らす。全売りでリセット
             qty -= q
             if qty <= 0:
                 qty = 0.0
@@ -386,13 +388,25 @@ def calc_avg_price(rows_sorted, buy_actions, sell_action, kenin_sell=False):
 
 
 def calculate_position_summary(df):
-    """保有ポジションの計算
+    """
+    保有ポジションの計算
 
-    【数量】単純集計（デバッグ2と同じロジック。移動平均法は使わない）
-      現物残  = 買付 + 入庫 + 現引 - 売付
-      信用残  = 買建 - 売埋 - 現引
+    【数量】単純集計（デバッグ2と同じロジック）
+      現物残（日本株）= 買付 + 入庫 + 現引 - 売付
+      現物残（米国株）= 買付 + 現引 - 売付
+      信用残          = 買建 - 売埋 - 現引
 
     【平均取得単価】移動平均法（全売りでリセット、楽天証券方式）
+
+    ※ バグ修正ポイント（セッション3）:
+      - spot_r フィルタを「現物側に関係する行のみ」に厳密化
+        （旧: account_type=='現物' OR 入庫 OR 現引）
+        （新: 現物買付・売付・入庫・現引 の行のみ）
+      - margin_r フィルタを「信用側に関係する行のみ」に厳密化
+        （旧: 買建 OR 売埋 OR 現引）
+        （新: 買建・売埋 の行のみ ＋ 現引は信用側の減算用として含む）
+      - kenin_qty 計算で account_type=='現引' かつ trade_action が '買建'/'売埋' でない行のみ対象
+        （古いCSV形式で現引が誤って買建/売埋として記録されていたデータへの対策）
     """
     if len(df) == 0:
         return pd.DataFrame()
@@ -422,19 +436,28 @@ def calculate_position_summary(df):
         market     = name_rows.iloc[0]['market']     if len(name_rows) > 0 else '日本株'
 
         # ===== 数量：単純集計 =====
-        kenin_qty = r[r['account_type'] == '現引']['quantity'].sum()
+        # 現引は「account_type=='現引'」かつ「trade_action が 買建/売埋 でない」行のみ
+        # （古い形式で現引が誤って買建/売埋として記録されていたデータを除外）
+        kenin_rows = r[
+            (r['account_type'] == '現引') &
+            (~r['trade_action'].isin(['買建', '売埋']))
+        ]
+        kenin_qty = kenin_rows['quantity'].sum()
 
         if market == '米国株':
-            buy_qty  = r[r['trade_action'] == '買付']['quantity'].sum()
-            sell_qty = r[r['trade_action'] == '売付']['quantity'].sum()
+            buy_qty   = r[r['trade_action'] == '買付']['quantity'].sum()
+            sell_qty  = r[r['trade_action'] == '売付']['quantity'].sum()
             nyuko_qty = 0
         else:
-            spot     = r[r['account_type'] == '現物']
-            buy_qty  = spot[spot['trade_action'] == '買付']['quantity'].sum()
-            sell_qty = spot[spot['trade_action'] == '売付']['quantity'].sum()
-            nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
+            # 日本株：account_type=='現物' の買付/売付のみカウント
+            spot_rows  = r[r['account_type'] == '現物']
+            buy_qty    = spot_rows[spot_rows['trade_action'] == '買付']['quantity'].sum()
+            sell_qty   = spot_rows[spot_rows['trade_action'] == '売付']['quantity'].sum()
+            nyuko_qty  = r[r['trade_action'] == '入庫']['quantity'].sum()
 
         spot_qty   = buy_qty + nyuko_qty + kenin_qty - sell_qty
+
+        # 信用：買建/売埋のみ（account_type が '信用新規'/'信用返済' の行）
         mbuy_qty   = r[r['trade_action'] == '買建']['quantity'].sum()
         msell_qty  = r[r['trade_action'] == '売埋']['quantity'].sum()
         margin_qty = mbuy_qty - msell_qty - kenin_qty
@@ -442,40 +465,52 @@ def calculate_position_summary(df):
         # ===== 平均取得単価：移動平均法 =====
         if spot_qty > 0:
             if market == '米国株':
-                spot_r = r[r['trade_action'].isin(['買付', '売付', '入庫'])].copy()
-            else:
+                # 米国株：買付・売付のみ（現引があれば含める）
                 spot_r = r[
-                    (r['account_type'] == '現物') |
+                    r['trade_action'].isin(['買付', '売付']) |
+                    ((r['account_type'] == '現引') & (~r['trade_action'].isin(['買建', '売埋'])))
+                ].copy()
+            else:
+                # 日本株：現物の買付/売付・入庫・現引のみ
+                spot_r = r[
+                    ((r['account_type'] == '現物') & r['trade_action'].isin(['買付', '売付'])) |
                     (r['trade_action'] == '入庫') |
-                    (r['account_type'] == '現引')
+                    ((r['account_type'] == '現引') & (~r['trade_action'].isin(['買建', '売埋'])))
                 ].copy()
             spot_avg = calc_avg_price(
-                spot_r, buy_actions=['買付', '入庫'], sell_action='売付', kenin_sell=False
+                spot_r.sort_values('trade_date'),
+                buy_actions=['買付', '入庫'],
+                sell_action='売付',
+                kenin_sell=False
             )
             summary.append({
                 'ticker_code': ticker,
                 'stock_name':  stock_name,
                 'market':      market,
                 'trade_type':  '現物',
-                'quantity':    int(spot_qty),
+                'quantity':    int(round(spot_qty)),
                 'avg_price':   round(spot_avg, 2),
                 'total_cost':  round(spot_avg * spot_qty, 0)
             })
 
         if margin_qty > 0:
+            # 信用：買建/売埋のみ（現引は信用側の減算として含める）
             margin_r = r[
                 r['trade_action'].isin(['買建', '売埋']) |
-                (r['account_type'] == '現引')
+                ((r['account_type'] == '現引') & (~r['trade_action'].isin(['買建', '売埋'])))
             ].copy()
             margin_avg = calc_avg_price(
-                margin_r, buy_actions=['買建'], sell_action='売埋', kenin_sell=True
+                margin_r.sort_values('trade_date'),
+                buy_actions=['買建'],
+                sell_action='売埋',
+                kenin_sell=True
             )
             summary.append({
                 'ticker_code': ticker,
                 'stock_name':  stock_name,
                 'market':      market,
                 'trade_type':  '信用買',
-                'quantity':    int(margin_qty),
+                'quantity':    int(round(margin_qty)),
                 'avg_price':   round(margin_avg, 2),
                 'total_cost':  round(margin_avg * margin_qty, 0)
             })
@@ -598,7 +633,7 @@ if sheets_client:
                 if year_filter != "全て":
                     df_filtered = df_filtered[df_filtered['trade_date'].dt.year == year_filter]
 
-                # ② 最新の約定日から降順に並び替え
+                # 最新の約定日から降順に並び替え
                 df_filtered = df_filtered.sort_values('trade_date', ascending=False)
 
                 display_cols = ['trade_date', 'market', 'ticker_code', 'stock_name', 'trade_action',
@@ -642,41 +677,54 @@ if sheets_client:
                         use_container_width=True
                     )
                     # ポジション計算のデバッグ
-                    from io import StringIO
-                    import sys
                     spot_r = debug_r[
-                        (debug_r["account_type"] == "現物") |
+                        ((debug_r["account_type"] == "現物") & debug_r["trade_action"].isin(["買付", "売付"])) |
                         (debug_r["trade_action"] == "入庫") |
-                        (debug_r["account_type"] == "現引")
+                        ((debug_r["account_type"] == "現引") & (~debug_r["trade_action"].isin(["買建", "売埋"])))
                     ].sort_values("trade_date")
                     st.markdown("**現物計算対象行:**")
                     st.dataframe(spot_r[["trade_date","account_type","trade_action","quantity","price"]], use_container_width=True)
-                    margin_r = debug_r[debug_r["trade_action"].isin(["買建","売埋"]) | (debug_r["account_type"] == "現引")].sort_values("trade_date")
+                    margin_r = debug_r[
+                        debug_r["trade_action"].isin(["買建","売埋"]) |
+                        ((debug_r["account_type"] == "現引") & (~debug_r["trade_action"].isin(["買建", "売埋"])))
+                    ].sort_values("trade_date")
                     st.markdown("**信用計算対象行:**")
                     st.dataframe(margin_r[["trade_date","account_type","trade_action","quantity","price"]], use_container_width=True)
 
             df_positions = calculate_position_summary(df_all)
 
-            # デバッグ：全銘柄の残数量チェック（68件問題の調査）
+            # デバッグ：全銘柄の残数量チェック
             if len(df_all) > 0:
                 with st.expander("🔍 デバッグ2：全銘柄の残数量チェック"):
                     all_tickers = sorted(df_all["ticker_code"].unique().tolist())
                     check_rows = []
                     for t in all_tickers:
                         r = df_all[df_all["ticker_code"] == t]
-                        buy = r[r["trade_action"] == "買付"]["quantity"].sum()
-                        sell = r[r["trade_action"] == "売付"]["quantity"].sum()
-                        kenin = r[r["account_type"] == "現引"]["quantity"].sum()
+                        # 現引を正しく識別（account_type=='現引' かつ 買建/売埋でない）
+                        kenin = r[
+                            (r["account_type"] == "現引") &
+                            (~r["trade_action"].isin(["買建", "売埋"]))
+                        ]["quantity"].sum()
+                        market_val = r.iloc[0]["market"] if len(r) > 0 else "日本株"
+                        if market_val == '米国株':
+                            buy = r[r["trade_action"] == "買付"]["quantity"].sum()
+                            sell = r[r["trade_action"] == "売付"]["quantity"].sum()
+                            nyuko = 0
+                        else:
+                            spot_rows = r[r["account_type"] == "現物"]
+                            buy = spot_rows[spot_rows["trade_action"] == "買付"]["quantity"].sum()
+                            sell = spot_rows[spot_rows["trade_action"] == "売付"]["quantity"].sum()
+                            nyuko = r[r["trade_action"] == "入庫"]["quantity"].sum()
                         mbuy = r[r["trade_action"] == "買建"]["quantity"].sum()
                         msell = r[r["trade_action"] == "売埋"]["quantity"].sum()
-                        spot_rem = buy + kenin - sell
+                        spot_rem = buy + nyuko + kenin - sell
                         margin_rem = mbuy - msell - kenin
                         check_rows.append({
                             "コード": t,
-                            "現物買付": int(buy), "現物売付": int(sell), "現引": int(kenin),
-                            "現物残": int(spot_rem),
+                            "現物買付": int(buy), "入庫": int(nyuko), "現物売付": int(sell), "現引": int(kenin),
+                            "現物残": int(round(spot_rem)),
                             "買建": int(mbuy), "売埋": int(msell),
-                            "信用残": int(margin_rem)
+                            "信用残": int(round(margin_rem))
                         })
                     check_df = pd.DataFrame(check_rows)
                     # 残があるものだけ表示
@@ -723,7 +771,7 @@ if sheets_client:
                 total_count = len(df_positions)
                 st.info(f"保有銘柄数: {total_count}件　　💡 行を直接編集して「変更を保存」で反映。数量を0にすると削除。")
 
-                # ① 日本株現物／日本株信用／米国株 の3タブに分けて表示（編集可能）
+                # 日本株現物／日本株信用／米国株 の3タブに分けて表示（編集可能）
                 spot_jp   = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '現物')].copy()
                 margin_jp = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '信用買')].copy()
                 us_stocks = df_positions[df_positions['market'] == '米国株'].copy()
@@ -790,7 +838,7 @@ if sheets_client:
                             code = str(erow.get("コード","")).strip()
                             if not code:
                                 continue
-                            # 元のデータから market/trade_type を取得（編集で変わる可能性を考慮）
+                            # 元のデータから market/trade_type を取得
                             orig_match = orig_df[orig_df['ticker_code'] == code]
                             market_val    = orig_match.iloc[0]['market']    if len(orig_match) > 0 else erow.get("市場","日本株")
                             tradetype_val = orig_match.iloc[0]['trade_type'] if len(orig_match) > 0 else trade_type_default
@@ -1208,7 +1256,7 @@ if sheets_client:
                             df_all_reasons = pd.DataFrame([new_row])
                             write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', df_all_reasons)
                         else:
-                            append_to_sheet(sheets_client, spreadsheet_id, 'reason_definitions', new_row)
+                            append_to_sheet(sheets_client, spreadsheet_id, 'closed_trades', new_row)
                         st.success("✅ 追加しました")
                         st.rerun()
 
