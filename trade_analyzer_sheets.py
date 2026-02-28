@@ -42,18 +42,72 @@ h1 {
 }
 
 /* ===== タブをスクロール時も上部固定 ===== */
-.stTabs [data-baseweb="tab-list"] {
-    position: sticky;
-    top: 0;
-    z-index: 999;
-    background-color: #0e1117;
-    padding: 4px 0;
-    border-bottom: 1px solid #333;
+/* メインタブ（最外側）のみ固定 */
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    background-color: #0e1117 !important;
+    padding: 4px 0 !important;
+    border-bottom: 1px solid #333 !important;
 }
-.stTabs [data-baseweb="tab-list"] button {
-    font-size: 13px !important;
-    padding: 10px 8px !important;
+div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button {
+    font-size: 12px !important;
+    padding: 10px 6px !important;
     min-width: 0 !important;
+}
+
+/* ===== アクティブトレードカード ===== */
+.trade-card {
+    background-color: #1a1f2e;
+    border: 1px solid #2d3348;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+}
+.trade-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.trade-ticker {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #fff;
+}
+.trade-name {
+    font-size: 0.8rem;
+    color: #aaa;
+}
+.trade-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+.trade-item {
+    text-align: center;
+    min-width: 70px;
+}
+.trade-label {
+    font-size: 0.68rem;
+    color: #888;
+}
+.trade-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+.trade-value.profit { color: #00cc96; }
+.trade-value.loss { color: #ef553b; }
+.trade-value.neutral { color: #ffa500; }
+.trade-reason {
+    font-size: 0.72rem;
+    color: #777;
+    margin-top: 6px;
+    border-top: 1px solid #2d3348;
+    padding-top: 4px;
 }
 
 /* ===== ボタン ===== */
@@ -832,55 +886,127 @@ if sheets_client:
 
             if len(df_positions) > 0:
                 total_count = len(df_positions)
-                st.info(f"保有銘柄数: {total_count}件　　💡 行を直接編集して「変更を保存」で反映。数量を0にすると削除。")
+                st.caption(f"保有銘柄数: {total_count}件　💡 数量を0にすると削除")
 
-                # 日本株現物／日本株信用／米国株 の3タブに分けて表示（編集可能）
+                # 日本株現物／日本株信用／米国株 の3タブに分けて表示
                 spot_jp   = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '現物')].copy()
                 margin_jp = df_positions[(df_positions['market'] == '日本株') & (df_positions['trade_type'] == '信用買')].copy()
                 us_stocks = df_positions[df_positions['market'] == '米国株'].copy()
 
                 pos_tab1, pos_tab2, pos_tab3 = st.tabs([
-                    f"🇯🇵 日本株（現物）{len(spot_jp)}件",
-                    f"📊 日本株（信用）{len(margin_jp)}件",
-                    f"🇺🇸 米国株 {len(us_stocks)}件"
+                    f"🇯🇵 現物 {len(spot_jp)}",
+                    f"📊 信用 {len(margin_jp)}",
+                    f"🇺🇸 米国 {len(us_stocks)}"
                 ])
 
                 def render_editable_positions(sub_df, tab_key):
-                    """編集可能なポジションテーブルを描画し、変更をsession_stateに保持"""
                     if len(sub_df) == 0:
                         st.info("このカテゴリの保有はありません")
                         return
-                    display_df = sub_df[['ticker_code','stock_name','market','trade_type','quantity','avg_price','total_cost']].rename(columns={
+                    display_df = sub_df[['ticker_code','stock_name','quantity','avg_price','total_cost']].rename(columns={
                         'ticker_code': 'コード',
                         'stock_name': '銘柄名',
-                        'market': '市場',
-                        'trade_type': '種別',
-                        'quantity': '保有数量',
-                        'avg_price': '平均取得単価',
+                        'quantity': '数量',
+                        'avg_price': '平均単価',
                         'total_cost': '総額'
                     }).reset_index(drop=True)
-
                     edited = st.data_editor(
                         display_df,
                         use_container_width=True,
                         num_rows="dynamic",
                         column_config={
-                            "コード":       st.column_config.TextColumn("コード", width="small"),
-                            "銘柄名":       st.column_config.TextColumn("銘柄名"),
-                            "市場":         st.column_config.TextColumn("市場", width="small"),
-                            "種別":         st.column_config.TextColumn("種別", width="small"),
-                            "保有数量":     st.column_config.NumberColumn("保有数量", min_value=0, step=1, width="small"),
-                            "平均取得単価": st.column_config.NumberColumn("平均取得単価", min_value=0, format="%.2f"),
-                            "総額":         st.column_config.NumberColumn("総額", disabled=True),
+                            "コード":   st.column_config.TextColumn("コード", width="small"),
+                            "銘柄名":   st.column_config.TextColumn("銘柄名"),
+                            "数量":     st.column_config.NumberColumn("数量", min_value=0, step=1, width="small"),
+                            "平均単価": st.column_config.NumberColumn("平均単価", min_value=0, format="%.2f"),
+                            "総額":     st.column_config.NumberColumn("総額", disabled=True),
                         },
                         key=f"editor_{tab_key}"
                     )
                     st.session_state[f"edited_{tab_key}"] = edited
 
+                def render_margin_positions(sub_df):
+                    """信用ポジション：楽天証券画面風にトレードごと表示 + アクティブ登録ボタン"""
+                    if len(sub_df) == 0:
+                        st.info("信用ポジションはありません")
+                        return
+                    # df_allから信用建玉の個別トレードを取得
+                    margin_trades = df_all[df_all['trade_action'] == '買建'].copy()
+                    # 売埋済みを除く（簡易：ticker_codeの信用残が0より多い銘柄のみ）
+                    valid_tickers = sub_df['ticker_code'].tolist()
+                    margin_trades = margin_trades[margin_trades['ticker_code'].isin(valid_tickers)]
+                    margin_trades = margin_trades.sort_values(['ticker_code', 'trade_date'])
+
+                    # 売埋数量を差し引いて残建玉を特定（FIFO簡易）
+                    remaining_trades = []
+                    for ticker in valid_tickers:
+                        t_trades = margin_trades[margin_trades['ticker_code'] == ticker].copy()
+                        sell_rows = df_all[(df_all['ticker_code'] == ticker) & (df_all['trade_action'] == '売埋')]
+                        kenin_rows = df_all[(df_all['ticker_code'] == ticker) & (df_all['account_type'] == '現引')]
+                        sold_qty = sell_rows['quantity'].sum() + kenin_rows['quantity'].sum()
+                        # FIFOで古い建玉から消費
+                        for _, tr in t_trades.iterrows():
+                            if sold_qty <= 0:
+                                remaining_trades.append(tr)
+                            else:
+                                q = float(tr['quantity'])
+                                if sold_qty >= q:
+                                    sold_qty -= q
+                                else:
+                                    tr_copy = tr.copy()
+                                    tr_copy['quantity'] = q - sold_qty
+                                    remaining_trades.append(tr_copy)
+                                    sold_qty = 0
+
+                    if not remaining_trades:
+                        render_editable_positions(sub_df, "margin_jp")
+                        return
+
+                    remaining_df = pd.DataFrame(remaining_trades)
+                    stock_names = dict(zip(df_all['ticker_code'], df_all['stock_name']))
+
+                    # アクティブ登録用データをsession_stateに格納
+                    for i, (_, tr) in enumerate(remaining_df.iterrows()):
+                        ticker = str(tr['ticker_code'])
+                        name = stock_names.get(ticker, ticker)
+                        price = float(tr['price'])
+                        qty = int(tr['quantity'])
+                        date_str = str(tr['trade_date'])[:10] if pd.notna(tr['trade_date']) else ''
+
+                        col_main, col_btn = st.columns([5, 1])
+                        with col_main:
+                            st.markdown(f"""
+<div style="background:#1a1f2e;border:1px solid #2d3348;border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-size:1.05rem;font-weight:bold;color:#fff;">{ticker}　<span style="font-size:0.8rem;color:#aaa;font-weight:normal;">{name}</span></span>
+    <span style="font-size:0.8rem;color:#888;">{date_str}</span>
+  </div>
+  <div style="display:flex;gap:20px;margin-top:6px;flex-wrap:wrap;">
+    <div><div style="font-size:0.65rem;color:#888;">建数量</div><div style="font-size:0.9rem;font-weight:600;">{qty}株</div></div>
+    <div><div style="font-size:0.65rem;color:#888;">建単価</div><div style="font-size:0.9rem;font-weight:600;">¥{price:,.1f}</div></div>
+    <div><div style="font-size:0.65rem;color:#888;">建玉金額</div><div style="font-size:0.9rem;font-weight:600;">¥{price*qty:,.0f}</div></div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+                        with col_btn:
+                            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+                            if st.button("📝", key=f"reg_active_{ticker}_{i}", help="アクティブ登録", use_container_width=True):
+                                st.session_state['prefill_ticker'] = ticker
+                                st.session_state['prefill_name'] = name
+                                st.session_state['prefill_price'] = price
+                                st.session_state['prefill_qty'] = qty
+                                st.session_state['prefill_date'] = date_str
+                                st.session_state['goto_active_register'] = True
+                                st.rerun()
+
+                    st.divider()
+                    st.caption("💡 集計編集（数量・単価の手動修正）")
+                    render_editable_positions(sub_df, "margin_jp")
+
                 with pos_tab1:
                     render_editable_positions(spot_jp, "spot_jp")
                 with pos_tab2:
-                    render_editable_positions(margin_jp, "margin_jp")
+                    render_margin_positions(margin_jp)
                 with pos_tab3:
                     render_editable_positions(us_stocks, "us_stocks")
 
@@ -994,52 +1120,50 @@ if sheets_client:
         with tab4:
             st.subheader("📈 アクティブトレード")
 
-            with st.expander("➕ 新規ポジション登録", expanded=False):
-                entry_ticker = st.text_input("銘柄コード", key="entry_ticker")
-                entry_name = st.text_input("銘柄名", key="entry_name")
+            # ポジションタブからの自動遷移フラグ
+            prefill = {}
+            if st.session_state.get('goto_active_register'):
+                prefill = {
+                    'ticker': st.session_state.pop('prefill_ticker', ''),
+                    'name':   st.session_state.pop('prefill_name', ''),
+                    'price':  st.session_state.pop('prefill_price', 0.0),
+                    'qty':    st.session_state.pop('prefill_qty', 1),
+                    'date':   st.session_state.pop('prefill_date', ''),
+                }
+                st.session_state.pop('goto_active_register', None)
+                st.info(f"📝 {prefill['ticker']} {prefill['name']} の登録フォームを開きました")
+
+            with st.expander("➕ 新規ポジション登録", expanded=bool(prefill)):
                 col1, col2 = st.columns(2)
                 with col1:
-                    entry_date = st.date_input("エントリー日", key="entry_date")
-                    entry_price = st.number_input("エントリー価格", min_value=0.0, step=0.01,
-                                                  key="entry_price")
+                    entry_ticker = st.text_input("銘柄コード", value=prefill.get('ticker',''), key="entry_ticker")
+                    entry_name   = st.text_input("銘柄名",     value=prefill.get('name',''),   key="entry_name")
+                    entry_date   = st.date_input("エントリー日", key="entry_date")
                 with col2:
-                    entry_qty = st.number_input("数量", min_value=1, step=1, key="entry_qty")
-                    stop_loss_price = st.number_input("損切り価格", min_value=0.0, step=0.01,
-                                                      key="stop_loss_price")
+                    entry_price    = st.number_input("エントリー価格（円）", min_value=0.0, value=float(prefill.get('price', 0.0)), step=1.0, format="%.1f", key="entry_price")
+                    entry_qty      = st.number_input("数量（株）", min_value=1, value=int(prefill.get('qty', 1)), step=1, key="entry_qty")
+                    stop_loss_price = st.number_input("損切り価格（円）", min_value=0.0, step=1.0, format="%.1f", key="stop_loss_price")
 
-                st.subheader("エントリー根拠")
+                st.markdown("**エントリー根拠**")
                 entry_categories = get_reason_list(sheets_client, spreadsheet_id, 'entry_category')
-                if len(entry_categories) > 0:
-                    entry_category = st.selectbox("種別", entry_categories['detail'].tolist(),
-                                                  key="entry_cat")
-                else:
-                    entry_category = st.text_input("種別", key="entry_cat")
-
-                entry_details = get_reason_list(sheets_client, spreadsheet_id, 'entry_detail')
-                if len(entry_details) > 0:
-                    entry_groups = entry_details.groupby('category')['detail'].apply(list).to_dict()
-                    if len(entry_groups) > 0:
-                        entry_group = st.selectbox("理由カテゴリ", list(entry_groups.keys()),
-                                                   key="entry_group")
-                        entry_detail = st.selectbox("理由詳細", entry_groups[entry_group],
-                                                    key="entry_detail")
+                col1, col2 = st.columns(2)
+                with col1:
+                    entry_category = st.selectbox("種別", entry_categories['detail'].tolist() if len(entry_categories) > 0 else [""], key="entry_cat")
+                with col2:
+                    entry_details = get_reason_list(sheets_client, spreadsheet_id, 'entry_detail')
+                    if len(entry_details) > 0:
+                        entry_groups = entry_details.groupby('category')['detail'].apply(list).to_dict()
+                        entry_group  = st.selectbox("カテゴリ", list(entry_groups.keys()), key="entry_group")
+                        entry_detail = st.selectbox("詳細", entry_groups[entry_group], key="entry_detail_sel")
                     else:
-                        entry_group = st.text_input("理由カテゴリ", key="entry_group")
-                        entry_detail = st.text_input("理由詳細", key="entry_detail")
-                else:
-                    entry_group = st.text_input("理由カテゴリ", key="entry_group")
-                    entry_detail = st.text_input("理由詳細", key="entry_detail")
+                        entry_group  = st.text_input("カテゴリ", key="entry_group")
+                        entry_detail = st.text_input("詳細", key="entry_detail_sel")
 
                 stop_loss_reasons = get_reason_list(sheets_client, spreadsheet_id, 'stop_loss')
-                if len(stop_loss_reasons) > 0:
-                    stop_loss_reason = st.selectbox("損切り根拠", stop_loss_reasons['detail'].tolist(),
-                                                    key="sl_reason")
-                else:
-                    stop_loss_reason = st.text_input("損切り根拠", key="sl_reason")
+                stop_loss_reason = st.selectbox("損切り根拠", stop_loss_reasons['detail'].tolist() if len(stop_loss_reasons) > 0 else [""], key="sl_reason")
+                entry_notes = st.text_area("メモ", key="entry_notes", height=70)
 
-                entry_notes = st.text_area("メモ", key="entry_notes")
-
-                if st.button("✅ 登録する", use_container_width=True, key="save_entry"):
+                if st.button("✅ 登録する", use_container_width=True, type="primary", key="save_entry"):
                     if entry_ticker and entry_price > 0 and entry_qty > 0:
                         new_row = {
                             'ticker_code': entry_ticker,
@@ -1055,127 +1179,147 @@ if sheets_client:
                             'is_active': 1,
                             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         }
-                        df_active = read_sheet(sheets_client, spreadsheet_id, 'active_trades')
-                        if len(df_active) == 0:
-                            df_active = pd.DataFrame([new_row])
-                            write_sheet(sheets_client, spreadsheet_id, 'active_trades', df_active)
+                        df_active_w = read_sheet(sheets_client, spreadsheet_id, 'active_trades')
+                        if len(df_active_w) == 0:
+                            write_sheet(sheets_client, spreadsheet_id, 'active_trades', pd.DataFrame([new_row]))
                         else:
                             append_to_sheet(sheets_client, spreadsheet_id, 'active_trades', new_row)
                         st.success("✅ 登録しました")
                         st.rerun()
                     else:
-                        st.error("必須項目を入力してください")
+                        st.error("銘柄コード・価格・数量は必須です")
 
             st.divider()
-            st.subheader("保有中のポジション")
+
+            # ===== アクティブトレード一覧（楽天証券風カード） =====
             df_active = read_sheet(sheets_client, spreadsheet_id, 'active_trades')
             if len(df_active) > 0:
-                df_active = df_active[df_active['is_active'] == '1']
-                for idx, row in df_active.iterrows():
-                    with st.container():
-                        col1, col2, col3 = st.columns([2, 2, 1])
-                        with col1:
-                            st.markdown(f"**{row['ticker_code']}** {row['stock_name']}")
-                            st.caption(f"エントリー: {row['entry_date']} @ ¥{float(row['entry_price']):,.2f}")
-                        with col2:
-                            st.metric("数量", f"{row['quantity']}株")
-                            st.caption(f"損切: ¥{float(row['stop_loss_price']):,.2f}")
-                        with col3:
-                            if st.button("決済", key=f"close_{idx}", use_container_width=True):
-                                st.session_state[f"closing_{idx}"] = True
-                                st.rerun()
+                df_active = df_active[df_active['is_active'] == '1'].reset_index(drop=True)
 
-                        with st.expander("詳細"):
-                            st.write(f"**エントリー根拠:** {row['entry_reason_category']} - {row['entry_reason_detail']}")
-                            st.write(f"**損切り理由:** {row['stop_loss_reason']}")
-                            if row.get('notes'):
-                                st.write(f"**メモ:** {row['notes']}")
-
-                        if st.session_state.get(f"closing_{idx}", False):
-                            with st.form(f"close_form_{idx}"):
-                                st.subheader("決済入力")
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    exit_date = st.date_input("決済日", value=datetime.now())
-                                    exit_price = st.number_input("決済価格", min_value=0.0, step=0.01,
-                                                                 value=float(row['entry_price']))
-                                with col2:
-                                    max_profit = st.number_input("最大含み益", value=0.0, step=0.01)
-                                    max_loss = st.number_input("最大含み損", value=0.0, step=0.01)
-
-                                exit_categories = get_reason_list(sheets_client, spreadsheet_id, 'exit_category')
-                                if len(exit_categories) > 0:
-                                    exit_category = st.selectbox("決済種別", exit_categories['detail'].tolist())
-                                else:
-                                    exit_category = st.text_input("決済種別")
-
-                                exit_details = get_reason_list(sheets_client, spreadsheet_id, 'exit_detail')
-                                if len(exit_details) > 0:
-                                    exit_groups = exit_details.groupby('category')['detail'].apply(list).to_dict()
-                                    if len(exit_groups) > 0:
-                                        exit_group = st.selectbox("決済理由カテゴリ", list(exit_groups.keys()))
-                                        exit_detail = st.selectbox("決済理由詳細", exit_groups[exit_group])
-                                    else:
-                                        exit_group = st.text_input("決済理由カテゴリ")
-                                        exit_detail = st.text_input("決済理由詳細")
-                                else:
-                                    exit_group = st.text_input("決済理由カテゴリ")
-                                    exit_detail = st.text_input("決済理由詳細")
-
-                                close_notes = st.text_area("決済メモ")
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    submit = st.form_submit_button("✅ 決済完了", use_container_width=True)
-                                with col2:
-                                    cancel = st.form_submit_button("❌ キャンセル", use_container_width=True)
-
-                                if submit and exit_price > 0:
-                                    profit_loss = (exit_price - float(row['entry_price'])) * float(row['quantity'])
-                                    profit_loss_pct = ((exit_price - float(row['entry_price'])) /
-                                                       float(row['entry_price'])) * 100
-                                    closed_row = {
-                                        'ticker_code': row['ticker_code'],
-                                        'stock_name': row['stock_name'],
-                                        'entry_date': row['entry_date'],
-                                        'entry_price': row['entry_price'],
-                                        'exit_date': str(exit_date),
-                                        'exit_price': exit_price,
-                                        'quantity': row['quantity'],
-                                        'profit_loss': profit_loss,
-                                        'profit_loss_pct': profit_loss_pct,
-                                        'entry_reason_category': row['entry_reason_category'],
-                                        'entry_reason_detail': row['entry_reason_detail'],
-                                        'exit_reason_category': exit_category,
-                                        'exit_reason_detail': f"{exit_group}/{exit_detail}",
-                                        'stop_loss_price': row['stop_loss_price'],
-                                        'max_profit': max_profit,
-                                        'max_loss': max_loss,
-                                        'price_3days_later': '',
-                                        'price_1week_later': '',
-                                        'price_1month_later': '',
-                                        'exit_evaluation': '',
-                                        'notes': f"{row.get('notes', '')}\n決済メモ: {close_notes}" if close_notes else row.get('notes', ''),
-                                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                    }
-                                    df_closed_sheet = read_sheet(sheets_client, spreadsheet_id, 'closed_trades')
-                                    if len(df_closed_sheet) == 0:
-                                        df_closed_sheet = pd.DataFrame([closed_row])
-                                        write_sheet(sheets_client, spreadsheet_id, 'closed_trades', df_closed_sheet)
-                                    else:
-                                        append_to_sheet(sheets_client, spreadsheet_id, 'closed_trades', closed_row)
-                                    df_active.loc[idx, 'is_active'] = 0
-                                    write_sheet(sheets_client, spreadsheet_id, 'active_trades', df_active)
-                                    st.success(f"✅ 決済完了 損益: ¥{profit_loss:,.0f} ({profit_loss_pct:+.2f}%)")
-                                    del st.session_state[f"closing_{idx}"]
-                                    st.rerun()
-
-                                if cancel:
-                                    del st.session_state[f"closing_{idx}"]
-                                    st.rerun()
-
-            st.divider()
             if len(df_active) == 0:
                 st.info("アクティブなポジションはありません")
+            else:
+                st.caption(f"保有中: {len(df_active)}件")
+                for idx, row in df_active.iterrows():
+                    entry_p = float(row['entry_price'])
+                    stop_p  = float(row['stop_loss_price']) if row.get('stop_loss_price') else 0.0
+                    qty     = int(row['quantity'])
+                    loss_per = entry_p - stop_p if stop_p > 0 else 0
+                    max_loss = loss_per * qty
+
+                    # カード本体
+                    st.markdown(f"""
+<div style="background:#1a1f2e;border:1px solid #2d3348;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+    <div>
+      <span style="font-size:1.1rem;font-weight:bold;color:#fff;">{row['ticker_code']}</span>
+      <span style="font-size:0.82rem;color:#aaa;margin-left:8px;">{row['stock_name']}</span>
+    </div>
+    <span style="font-size:0.75rem;color:#666;">{row['entry_date']}</span>
+  </div>
+  <div style="display:flex;gap:0;border:1px solid #2d3348;border-radius:8px;overflow:hidden;text-align:center;">
+    <div style="flex:1;padding:8px 4px;border-right:1px solid #2d3348;">
+      <div style="font-size:0.62rem;color:#888;">建数量</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#fff;">{qty}<span style="font-size:0.65rem;color:#888;">株</span></div>
+    </div>
+    <div style="flex:1.5;padding:8px 4px;border-right:1px solid #2d3348;">
+      <div style="font-size:0.62rem;color:#888;">建単価</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#fff;">¥{entry_p:,.1f}</div>
+    </div>
+    <div style="flex:1.5;padding:8px 4px;border-right:1px solid #2d3348;">
+      <div style="font-size:0.62rem;color:#888;">損切価格</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#ef8c8c;">¥{stop_p:,.1f}</div>
+    </div>
+    <div style="flex:1.5;padding:8px 4px;">
+      <div style="font-size:0.62rem;color:#888;">最大損失</div>
+      <div style="font-size:1.0rem;font-weight:700;color:#ef553b;">¥{max_loss:,.0f}</div>
+    </div>
+  </div>
+  <div style="font-size:0.7rem;color:#666;margin-top:6px;">
+    📌 {row['entry_reason_category']} / {row['entry_reason_detail']}　　✂️ {row['stop_loss_reason']}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+                    # 決済ボタン
+                    col_close, col_dummy = st.columns([1, 3])
+                    with col_close:
+                        if st.button("💴 決済", key=f"close_{idx}", use_container_width=True):
+                            st.session_state[f"closing_{idx}"] = True
+                            st.rerun()
+
+                    if st.session_state.get(f"closing_{idx}", False):
+                        with st.form(f"close_form_{idx}"):
+                            st.markdown("**決済入力**")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                exit_date  = st.date_input("決済日", value=datetime.now())
+                                exit_price = st.number_input("決済価格", min_value=0.0, step=1.0, value=entry_p, format="%.1f")
+                            with col2:
+                                max_profit_val = st.number_input("最大含み益", value=0.0, step=1.0)
+                                max_loss_val   = st.number_input("最大含み損", value=0.0, step=1.0)
+
+                            exit_categories = get_reason_list(sheets_client, spreadsheet_id, 'exit_category')
+                            exit_category = st.selectbox("決済種別", exit_categories['detail'].tolist() if len(exit_categories) > 0 else [""])
+
+                            exit_details = get_reason_list(sheets_client, spreadsheet_id, 'exit_detail')
+                            if len(exit_details) > 0:
+                                exit_groups = exit_details.groupby('category')['detail'].apply(list).to_dict()
+                                exit_group  = st.selectbox("決済理由カテゴリ", list(exit_groups.keys()))
+                                exit_detail = st.selectbox("決済理由詳細", exit_groups[exit_group])
+                            else:
+                                exit_group  = st.text_input("決済理由カテゴリ")
+                                exit_detail = st.text_input("決済理由詳細")
+
+                            close_notes = st.text_area("決済メモ", height=60)
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                submit = st.form_submit_button("✅ 決済完了", use_container_width=True)
+                            with col2:
+                                cancel = st.form_submit_button("❌ キャンセル", use_container_width=True)
+
+                            if submit and exit_price > 0:
+                                profit_loss     = (exit_price - entry_p) * qty
+                                profit_loss_pct = ((exit_price - entry_p) / entry_p) * 100
+                                closed_row = {
+                                    'ticker_code': row['ticker_code'],
+                                    'stock_name': row['stock_name'],
+                                    'entry_date': row['entry_date'],
+                                    'entry_price': entry_p,
+                                    'exit_date': str(exit_date),
+                                    'exit_price': exit_price,
+                                    'quantity': qty,
+                                    'profit_loss': profit_loss,
+                                    'profit_loss_pct': profit_loss_pct,
+                                    'entry_reason_category': row['entry_reason_category'],
+                                    'entry_reason_detail': row['entry_reason_detail'],
+                                    'exit_reason_category': exit_category,
+                                    'exit_reason_detail': f"{exit_group}/{exit_detail}",
+                                    'stop_loss_price': stop_p,
+                                    'max_profit': max_profit_val,
+                                    'max_loss': max_loss_val,
+                                    'price_3days_later': '',
+                                    'price_1week_later': '',
+                                    'price_1month_later': '',
+                                    'exit_evaluation': '',
+                                    'notes': f"{row.get('notes', '')}\n決済メモ: {close_notes}" if close_notes else row.get('notes', ''),
+                                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                }
+                                df_closed_sheet = read_sheet(sheets_client, spreadsheet_id, 'closed_trades')
+                                if len(df_closed_sheet) == 0:
+                                    write_sheet(sheets_client, spreadsheet_id, 'closed_trades', pd.DataFrame([closed_row]))
+                                else:
+                                    append_to_sheet(sheets_client, spreadsheet_id, 'closed_trades', closed_row)
+                                df_active.loc[idx, 'is_active'] = 0
+                                write_sheet(sheets_client, spreadsheet_id, 'active_trades', df_active)
+                                color = "🟢" if profit_loss >= 0 else "🔴"
+                                st.success(f"{color} 決済完了　損益: ¥{profit_loss:,.0f} ({profit_loss_pct:+.2f}%)")
+                                del st.session_state[f"closing_{idx}"]
+                                st.rerun()
+
+                            if cancel:
+                                del st.session_state[f"closing_{idx}"]
+                                st.rerun()
 
         # ========== タブ5: 分析 ==========
         with tab5:
