@@ -29,7 +29,6 @@ st.set_page_config(
 st.markdown("""
 <style>
 .main .block-container {
-    padding-top: 0.5rem;
     padding-bottom: 1rem;
     padding-left: 0.75rem;
     padding-right: 0.75rem;
@@ -37,18 +36,30 @@ st.markdown("""
 }
 h1 { font-size: 1.2rem !important; margin-bottom: 0 !important; padding-bottom: 0 !important; }
 .stCaption { margin-top: 0 !important; font-size: 0.7rem !important; }
+/* タブを画面上部に固定 */
 div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-    position: sticky !important;
+    position: fixed !important;
     top: 0 !important;
-    z-index: 1000 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 99999 !important;
     background-color: #0e1117 !important;
-    padding: 4px 0 !important;
-    border-bottom: 1px solid #333 !important;
+    padding: 6px 8px 0 8px !important;
+    border-bottom: 2px solid #333 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
 }
 div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button {
     font-size: 12px !important;
     padding: 10px 6px !important;
     min-width: 0 !important;
+}
+/* タブ固定分のコンテンツ上部パディング確保 */
+div[data-testid="stTabs"] > div[data-testid="stTabPanel"] {
+    padding-top: 52px !important;
+}
+/* ヘッダーも固定タブの下に隠れないよう調整 */
+.main .block-container {
+    padding-top: 60px !important;
 }
 .trade-card {
     background-color: #1a1f2e;
@@ -783,18 +794,20 @@ if sheets_client:
 
         # ========== タブ2: 🔔 未入力催促 ==========
         with tab2:
-            # ③ 重さ対策：ポジション計算を1回だけ実行
-            df_all_t2 = load_all_trades(sheets_client, spreadsheet_id)
+            # ===== データ読み込みはタブ先頭で1回だけ =====
+            df_all_t2       = load_all_trades(sheets_client, spreadsheet_id)
             df_positions_t2 = calculate_position_summary(df_all_t2)
-            manual_pos_df_t2 = read_sheet(sheets_client, spreadsheet_id, 'manual_positions')
-            df_positions_t2 = apply_manual_positions(df_positions_t2, manual_pos_df_t2)
-            df_reasons = load_trade_reasons(sheets_client, spreadsheet_id)
+            manual_pos_t2   = read_sheet(sheets_client, spreadsheet_id, 'manual_positions')
+            df_positions_t2 = apply_manual_positions(df_positions_t2, manual_pos_t2)
+            df_reasons      = load_trade_reasons(sheets_client, spreadsheet_id)
+            df_defs         = get_reason_definitions(sheets_client, spreadsheet_id)  # ← 1回だけ取得
+            sl_items        = get_stoploss_items(df_defs)
 
-            # --- 上部：① 現物・信用分離 保有ポジション一覧 ---
+            # --- 上部：保有ポジション一覧（① 現物・信用分離）---
             st.subheader("📦 保有ポジション")
             col_price_btn, col_price_info = st.columns([1, 3])
             with col_price_btn:
-                fetch_prices = st.button("📡 株価更新", use_container_width=True)
+                fetch_prices = st.button("📡 株価更新", use_container_width=True, key="t2_fetch")
             with col_price_info:
                 cache_time = st.session_state.get('price_cache_time')
                 if not YFINANCE_AVAILABLE:
@@ -815,50 +828,55 @@ if sheets_client:
                         st.session_state['price_cache'] = cache
                         st.session_state['price_cache_time'] = datetime.now().strftime('%H:%M')
                     st.rerun()
-                # ① 現物・信用分離して表示
                 render_position_table(df_positions_t2, st.session_state.get('price_cache', {}))
             else:
                 st.info("保有ポジションはありません")
 
             st.divider()
-            st.subheader("🔔 理由の入力をお願いします")
+            st.subheader("🔔 理由の入力")
 
-            today = pd.Timestamp.today()
+            # ===== 催促対象リストを構築（軽量・1回だけ）=====
+            today         = pd.Timestamp.today()
             one_month_ago = today - pd.Timedelta(days=31)
 
-            skipped_or_filled_buy  = set()
-            skipped_or_filled_sell = set()
+            # 入力済み・スキップ済みキーを収集
+            filled_buy  = set()
+            filled_sell = set()
             if len(df_reasons) > 0:
                 for _, rrow in df_reasons.iterrows():
                     key = f"{rrow['ticker_code']}_{str(rrow['trade_date'])[:10]}_{rrow['trade_action']}"
-                    if rrow.get('skipped') == 'True':
-                        skipped_or_filled_buy.add(key)
-                        skipped_or_filled_sell.add(key)
+                    if str(rrow.get('skipped', '')) == 'True':
+                        filled_buy.add(key)
+                        filled_sell.add(key)
                     else:
-                        if rrow.get('entry_reason_large'):
-                            skipped_or_filled_buy.add(key)
-                        if rrow.get('exit_reason_large'):
-                            skipped_or_filled_sell.add(key)
+                        if str(rrow.get('entry_reason_large', '')).strip():
+                            filled_buy.add(key)
+                        if str(rrow.get('exit_reason_large', '')).strip():
+                            filled_sell.add(key)
 
-            # ② 現在保有中の銘柄・未決済ポジションのみ催促
+            # ② 保有中ポジションに紐づく買付のみ催促（絞り込み修正）
             prompt_entries = []
             if len(df_positions_t2) > 0 and len(df_all_t2) > 0:
-                holding_set = set(zip(df_positions_t2['ticker_code'], df_positions_t2['trade_type']))
-                for ticker, trade_type in holding_set:
-                    target_actions = ['買建'] if trade_type == '信用買' else ['買付']
-                    # 買付なし（現引のみ）の現物銘柄も対応
-                    if trade_type == '現物':
+                # 保有中の（ticker, trade_type）セット
+                holding_set = set(zip(
+                    df_positions_t2['ticker_code'].astype(str),
+                    df_positions_t2['trade_type'].astype(str)
+                ))
+                for ticker, trade_type in sorted(holding_set):
+                    if trade_type == '信用買':
+                        target_actions = ['買建']
+                    else:
+                        # 現物：買付があれば買付のみ、なければ現引
                         ticker_rows = df_all_t2[df_all_t2['ticker_code'] == ticker]
                         has_buy = len(ticker_rows[ticker_rows['trade_action'] == '買付']) > 0
-                        if not has_buy:
-                            target_actions = ['現引']
-                    ticker_trades = df_all_t2[
+                        target_actions = ['買付'] if has_buy else ['現引']
+                    trades = df_all_t2[
                         (df_all_t2['ticker_code'] == ticker) &
                         (df_all_t2['trade_action'].isin(target_actions))
                     ].sort_values('trade_date')
-                    for _, tr in ticker_trades.iterrows():
+                    for _, tr in trades.iterrows():
                         key = f"{ticker}_{str(tr['trade_date'])[:10]}_{tr['trade_action']}"
-                        if key not in skipped_or_filled_buy:
+                        if key not in filled_buy:
                             prompt_entries.append(tr)
 
             # 直近1ヶ月の決済催促
@@ -870,108 +888,238 @@ if sheets_client:
                 ].sort_values('trade_date', ascending=False)
                 for _, tr in recent_sells.iterrows():
                     key = f"{tr['ticker_code']}_{str(tr['trade_date'])[:10]}_{tr['trade_action']}"
-                    if key not in skipped_or_filled_sell:
+                    if key not in filled_sell:
                         prompt_exits.append(tr)
 
-            total_prompts = len(prompt_entries) + len(prompt_exits)
-            if total_prompts == 0:
+            # 全催促リストを結合（エントリー→決済の順）
+            all_prompts = [('entry', tr) for tr in prompt_entries] + \
+                          [('exit',  tr) for tr in prompt_exits]
+            total = len(all_prompts)
+
+            if total == 0:
                 st.success("✅ 未入力の取引はありません！")
             else:
-                st.caption(f"未入力: エントリー {len(prompt_entries)}件 ／ 決済 {len(prompt_exits)}件")
-                df_defs = get_reason_definitions(sheets_client, spreadsheet_id)
-                sl_items = get_stoploss_items(df_defs)
+                # ===== 進捗表示 =====
+                idx_key = 'prompt_idx'
+                if idx_key not in st.session_state:
+                    st.session_state[idx_key] = 0
+                # インデックスが範囲外になったらリセット
+                if st.session_state[idx_key] >= total:
+                    st.session_state[idx_key] = 0
 
-                # エントリー理由カード
-                if prompt_entries:
-                    st.markdown("#### 🟦 エントリー理由")
-                    for i, tr in enumerate(prompt_entries):
-                        ticker         = str(tr['ticker_code'])
-                        name           = str(tr.get('stock_name', ticker))
-                        trade_date_str = str(tr['trade_date'])[:10]
-                        action         = str(tr.get('trade_action', '買付'))
-                        price_val      = float(tr['price']) if pd.notna(tr.get('price')) else 0.0
-                        qty_val        = int(tr['quantity']) if pd.notna(tr.get('quantity')) else 0
-                        currency       = '¥' if tr.get('market') == '日本株' else '$'
-                        card_key       = f"entry_{ticker}_{trade_date_str}_{i}"
-                        st.markdown(f"""
-<div class="prompt-card entry-card">
+                cur_idx = st.session_state[idx_key]
+
+                # 進捗バー＋件数表示
+                entry_cnt = len(prompt_entries)
+                exit_cnt  = len(prompt_exits)
+                st.markdown(
+                    f"**残り {total - cur_idx} 件** （エントリー {entry_cnt}件 ／ 決済 {exit_cnt}件）　"
+                    f"進捗: {cur_idx}/{total}"
+                )
+                st.progress(cur_idx / total if total > 0 else 0)
+
+                # ===== 一括スキップボタン =====
+                col_skip_all, col_dummy = st.columns([2, 3])
+                with col_skip_all:
+                    if st.button("⏭⏭ 残り全件をスキップ", use_container_width=True, key="skip_all"):
+                        with st.spinner(f"残り {total - cur_idx} 件をスキップ中..."):
+                            # trade_reasons を1回だけ読んで一括書き込み
+                            df_r_bulk = load_trade_reasons(sheets_client, spreadsheet_id)
+                            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            new_rows = []
+                            for ptype, tr in all_prompts[cur_idx:]:
+                                t_code = str(tr['ticker_code'])
+                                t_date = str(tr['trade_date'])[:10]
+                                t_act  = str(tr.get('trade_action', ''))
+                                mask = (
+                                    (df_r_bulk['ticker_code'].astype(str) == t_code) &
+                                    (df_r_bulk['trade_date'].astype(str).str[:10] == t_date) &
+                                    (df_r_bulk['trade_action'].astype(str) == t_act)
+                                )
+                                if mask.any():
+                                    df_r_bulk.loc[mask, 'skipped']    = 'True'
+                                    df_r_bulk.loc[mask, 'updated_at'] = now_str
+                                else:
+                                    new_rows.append({
+                                        'ticker_code': t_code, 'trade_date': t_date, 'trade_action': t_act,
+                                        'entry_reason_large':'','entry_reason_medium':'','entry_reason_small':'',
+                                        'entry_memo':'','stop_loss_type':'','stop_loss_price':'',
+                                        'exit_reason_large':'','exit_reason_medium':'','exit_reason_small':'',
+                                        'exit_memo':'','skipped':'True','created_at':now_str,'updated_at':now_str
+                                    })
+                            if new_rows:
+                                df_r_bulk = pd.concat([df_r_bulk, pd.DataFrame(new_rows)], ignore_index=True)
+                            write_sheet(sheets_client, spreadsheet_id, 'trade_reasons', df_r_bulk)
+                        st.session_state[idx_key] = 0
+                        st.success("スキップしました")
+                        st.rerun()
+
+                st.divider()
+
+                # ===== 現在の1件を表示 =====
+                ptype, tr = all_prompts[cur_idx]
+                ticker         = str(tr['ticker_code'])
+                name           = str(tr.get('stock_name', ticker))
+                trade_date_str = str(tr['trade_date'])[:10]
+                action         = str(tr.get('trade_action', ''))
+                price_val      = float(tr['price']) if pd.notna(tr.get('price')) else 0.0
+                qty_val        = int(tr['quantity']) if pd.notna(tr.get('quantity')) else 0
+                currency       = '¥' if str(tr.get('market','')) == '日本株' else '$'
+                is_entry       = (ptype == 'entry')
+                card_cls       = "entry-card" if is_entry else "exit-card"
+                label          = "🟦 エントリー理由" if is_entry else "🟧 決済理由"
+
+                st.markdown(f"""
+<div class="prompt-card {card_cls}">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-    <span style="font-size:1.05rem;font-weight:bold;color:#fff;">{ticker}　<span style="font-size:0.82rem;color:#ccc;font-weight:normal;">{name}</span></span>
+    <span style="font-size:1.1rem;font-weight:bold;color:#fff;">{ticker}
+      <span style="font-size:0.85rem;color:#ccc;font-weight:normal;margin-left:6px;">{name}</span>
+    </span>
     <span style="font-size:0.78rem;color:#aaa;">{trade_date_str}　{action}</span>
   </div>
-  <div style="font-size:0.88rem;color:#ddd;">{currency}{price_val:,.1f} × {qty_val}株　合計: {currency}{price_val*qty_val:,.0f}</div>
+  <div style="font-size:0.9rem;color:#ddd;">{currency}{price_val:,.1f} × {qty_val}株　合計: {currency}{price_val*qty_val:,.0f}</div>
 </div>""", unsafe_allow_html=True)
-                        with st.container():
-                            # ④ 大・中・小の3階層プルダウン
-                            st.markdown("**エントリー理由（大・中・小）**")
-                            large_sel, medium_sel, small_sel = reason_selector_3level(df_defs, 'entry', f"er_{card_key}")
-                            entry_memo_val = st.text_input("メモ（任意）", key=f"em_{card_key}", placeholder="自由記述")
-                            # ④ 損切りポイント：選択肢＋数値入力
-                            st.markdown("**損切りポイント**")
-                            col_sl1, col_sl2 = st.columns(2)
-                            with col_sl1:
-                                sl_type = st.selectbox("損切り根拠", ["（選択）"] + sl_items, key=f"sl_type_{card_key}")
-                            with col_sl2:
-                                sl_price = st.number_input("損切り価格（円/ドル）", min_value=0.0, step=1.0, format="%.1f", key=f"sl_price_{card_key}")
-                            col_save, col_skip = st.columns(2)
-                            with col_save:
-                                if st.button("✅ 保存", key=f"save_{card_key}", use_container_width=True):
-                                    if sl_price <= 0:
-                                        st.error("損切り価格は必須です")
+
+                st.markdown(f"#### {label}")
+
+                if is_entry:
+                    # エントリー理由（大・中・小）
+                    large_items = get_large(df_defs, 'entry')
+                    if large_items:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            large_sel = st.selectbox("大項目", large_items, key="cur_large")
+                        medium_items = get_medium(df_defs, 'entry', large_sel)
+                        with col2:
+                            if medium_items:
+                                medium_sel = st.selectbox("中項目", medium_items, key="cur_medium")
+                            else:
+                                st.selectbox("中項目", ["（なし）"], key="cur_medium")
+                                medium_sel = ""
+                        small_items = get_small(df_defs, 'entry', medium_sel) if medium_sel else []
+                        with col3:
+                            if small_items:
+                                small_sel = st.selectbox("小項目", small_items, key="cur_small")
+                            else:
+                                st.selectbox("小項目", ["（なし）"], key="cur_small")
+                                small_sel = ""
+                    else:
+                        st.warning("選択肢が未設定です。⚙️設定タブで追加してください。")
+                        large_sel = medium_sel = small_sel = ""
+
+                    entry_memo = st.text_input("メモ（任意）", key="cur_memo", placeholder="自由記述")
+
+                    st.markdown("**損切りポイント**")
+                    col_sl1, col_sl2 = st.columns(2)
+                    with col_sl1:
+                        sl_type = st.selectbox("損切り根拠", ["（選択）"] + sl_items, key="cur_sl_type")
+                    with col_sl2:
+                        sl_price = st.number_input("損切り価格（円/ドル）", min_value=0.0, step=1.0, format="%.1f", key="cur_sl_price")
+
+                    st.markdown("")
+                    col_s, col_sk, col_n = st.columns(3)
+                    with col_s:
+                        if st.button("✅ 保存して次へ", use_container_width=True, type="primary", key="cur_save"):
+                            if sl_price <= 0:
+                                st.error("損切り価格を入力してください")
+                            else:
+                                # trade_reasonsに保存
+                                save_trade_reason(
+                                    sheets_client, spreadsheet_id,
+                                    ticker_code=ticker, trade_date=trade_date_str, trade_action=action,
+                                    entry_reason_large=large_sel, entry_reason_medium=medium_sel, entry_reason_small=small_sel,
+                                    entry_memo=entry_memo,
+                                    stop_loss_type=sl_type if sl_type != "（選択）" else "",
+                                    stop_loss_price=sl_price
+                                )
+                                # active_tradesにも自動登録（重複チェック付き）
+                                df_at = read_sheet(sheets_client, spreadsheet_id, 'active_trades')
+                                already_active = False
+                                if len(df_at) > 0:
+                                    already_active = len(df_at[
+                                        (df_at['ticker_code'].astype(str) == ticker) &
+                                        (df_at['entry_date'].astype(str) == trade_date_str) &
+                                        (df_at['entry_price'].astype(str) == str(price_val)) &
+                                        (df_at['is_active'].astype(str) == '1')
+                                    ]) > 0
+                                if not already_active:
+                                    new_active = {
+                                        'ticker_code': ticker, 'stock_name': name,
+                                        'entry_date': trade_date_str, 'entry_price': price_val,
+                                        'quantity': qty_val,
+                                        'entry_reason_large': large_sel,
+                                        'entry_reason_medium': medium_sel,
+                                        'entry_reason_small': small_sel,
+                                        'stop_loss_type': sl_type if sl_type != "（選択）" else "",
+                                        'stop_loss_price': sl_price,
+                                        'notes': entry_memo, 'is_active': 1,
+                                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    }
+                                    if len(df_at) == 0:
+                                        write_sheet(sheets_client, spreadsheet_id, 'active_trades', pd.DataFrame([new_active]))
                                     else:
-                                        save_trade_reason(sheets_client, spreadsheet_id,
-                                            ticker_code=ticker, trade_date=trade_date_str, trade_action=action,
-                                            entry_reason_large=large_sel, entry_reason_medium=medium_sel, entry_reason_small=small_sel,
-                                            entry_memo=entry_memo_val,
-                                            stop_loss_type=sl_type if sl_type != "（選択）" else "", stop_loss_price=sl_price)
-                                        st.success("保存しました")
-                                        st.rerun()
-                            with col_skip:
-                                if st.button("⏭ スキップ（入力不要）", key=f"skip_{card_key}", use_container_width=True):
-                                    save_trade_reason(sheets_client, spreadsheet_id,
-                                        ticker_code=ticker, trade_date=trade_date_str, trade_action=action, skipped=True)
-                                    st.rerun()
-                        st.markdown("---")
+                                        append_to_sheet(sheets_client, spreadsheet_id, 'active_trades', new_active)
+                                st.session_state[idx_key] = cur_idx + 1
+                                st.rerun()
+                    with col_sk:
+                        if st.button("⏭ スキップ", use_container_width=True, key="cur_skip"):
+                            save_trade_reason(sheets_client, spreadsheet_id,
+                                ticker_code=ticker, trade_date=trade_date_str, trade_action=action, skipped=True)
+                            st.session_state[idx_key] = cur_idx + 1
+                            st.rerun()
+                    with col_n:
+                        if st.button("→ 次の件へ（後で入力）", use_container_width=True, key="cur_next"):
+                            st.session_state[idx_key] = cur_idx + 1
+                            st.rerun()
 
-                # 決済理由カード
-                if prompt_exits:
-                    st.markdown("#### 🟧 決済理由")
-                    for i, tr in enumerate(prompt_exits):
-                        ticker         = str(tr['ticker_code'])
-                        name           = str(tr.get('stock_name', ticker))
-                        trade_date_str = str(tr['trade_date'])[:10]
-                        action         = str(tr.get('trade_action', '売付'))
-                        price_val      = float(tr['price']) if pd.notna(tr.get('price')) else 0.0
-                        qty_val        = int(tr['quantity']) if pd.notna(tr.get('quantity')) else 0
-                        currency       = '¥' if tr.get('market') == '日本株' else '$'
-                        card_key       = f"exit_{ticker}_{trade_date_str}_{i}"
-                        st.markdown(f"""
-<div class="prompt-card exit-card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-    <span style="font-size:1.05rem;font-weight:bold;color:#fff;">{ticker}　<span style="font-size:0.82rem;color:#ccc;font-weight:normal;">{name}</span></span>
-    <span style="font-size:0.78rem;color:#aaa;">{trade_date_str}　{action}</span>
-  </div>
-  <div style="font-size:0.88rem;color:#ddd;">{currency}{price_val:,.1f} × {qty_val}株　合計: {currency}{price_val*qty_val:,.0f}</div>
-</div>""", unsafe_allow_html=True)
-                        with st.container():
-                            st.markdown("**決済理由（大・中・小）**")
-                            x_large, x_medium, x_small = reason_selector_3level(df_defs, 'exit', f"xr_{card_key}")
-                            exit_memo_val = st.text_input("メモ（任意）", key=f"xm_{card_key}", placeholder="自由記述")
-                            col_save, col_skip = st.columns(2)
-                            with col_save:
-                                if st.button("✅ 保存", key=f"xsave_{card_key}", use_container_width=True):
-                                    save_trade_reason(sheets_client, spreadsheet_id,
-                                        ticker_code=ticker, trade_date=trade_date_str, trade_action=action,
-                                        exit_reason_large=x_large, exit_reason_medium=x_medium, exit_reason_small=x_small,
-                                        exit_memo=exit_memo_val)
-                                    st.success("保存しました")
-                                    st.rerun()
-                            with col_skip:
-                                if st.button("⏭ スキップ（入力不要）", key=f"xskip_{card_key}", use_container_width=True):
-                                    save_trade_reason(sheets_client, spreadsheet_id,
-                                        ticker_code=ticker, trade_date=trade_date_str, trade_action=action, skipped=True)
-                                    st.rerun()
-                        st.markdown("---")
+                else:  # 決済理由
+                    xl_items = get_large(df_defs, 'exit')
+                    if xl_items:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            x_large = st.selectbox("大項目", xl_items, key="cur_xlarge")
+                        xm_items = get_medium(df_defs, 'exit', x_large)
+                        with col2:
+                            if xm_items:
+                                x_medium = st.selectbox("中項目", xm_items, key="cur_xmedium")
+                            else:
+                                st.selectbox("中項目", ["（なし）"], key="cur_xmedium")
+                                x_medium = ""
+                        xs_items = get_small(df_defs, 'exit', x_medium) if x_medium else []
+                        with col3:
+                            if xs_items:
+                                x_small = st.selectbox("小項目", xs_items, key="cur_xsmall")
+                            else:
+                                st.selectbox("小項目", ["（なし）"], key="cur_xsmall")
+                                x_small = ""
+                    else:
+                        st.warning("選択肢が未設定です。⚙️設定タブで追加してください。")
+                        x_large = x_medium = x_small = ""
+
+                    exit_memo = st.text_input("メモ（任意）", key="cur_xmemo", placeholder="自由記述")
+
+                    st.markdown("")
+                    col_s, col_sk, col_n = st.columns(3)
+                    with col_s:
+                        if st.button("✅ 保存して次へ", use_container_width=True, type="primary", key="cur_xsave"):
+                            save_trade_reason(
+                                sheets_client, spreadsheet_id,
+                                ticker_code=ticker, trade_date=trade_date_str, trade_action=action,
+                                exit_reason_large=x_large, exit_reason_medium=x_medium, exit_reason_small=x_small,
+                                exit_memo=exit_memo
+                            )
+                            st.session_state[idx_key] = cur_idx + 1
+                            st.rerun()
+                    with col_sk:
+                        if st.button("⏭ スキップ", use_container_width=True, key="cur_xskip"):
+                            save_trade_reason(sheets_client, spreadsheet_id,
+                                ticker_code=ticker, trade_date=trade_date_str, trade_action=action, skipped=True)
+                            st.session_state[idx_key] = cur_idx + 1
+                            st.rerun()
+                    with col_n:
+                        if st.button("→ 次の件へ（後で入力）", use_container_width=True, key="cur_xnext"):
+                            st.session_state[idx_key] = cur_idx + 1
+                            st.rerun()
 
         # ========== タブ3: アクティブトレード ==========
         with tab3:
