@@ -375,6 +375,18 @@ def init_sheets(client, sid):
     if len(df) == 0:
         write_sheet(client, sid, TRADELOG_SHEET, pd.DataFrame(columns=TRADELOG_COLS))
 
+# ==================== CSV 読み込みヘルパー ====================
+def read_csv_auto(file):
+    """エンコーディングを自動検出してCSVを読み込む"""
+    for enc in ['cp932', 'utf-8-sig', 'utf-8', 'shift_jis', 'latin-1']:
+        try:
+            file.seek(0)
+            return pd.read_csv(file, encoding=enc)
+        except (UnicodeDecodeError, Exception):
+            continue
+    file.seek(0)
+    return pd.read_csv(file, encoding='latin-1')
+
 # ==================== CSV パーサー ====================
 def _clean_num(s):
     return pd.to_numeric(
@@ -590,7 +602,7 @@ with tab_import:
 
     if jp_real:
         try:
-            df = pd.read_csv(jp_real, encoding='cp932')
+            df = read_csv_auto(jp_real)
             realized_parts.append(parse_realized_jp(df))
             st.success(f"日本株 実現損益: {len(df)}件 ✅")
         except Exception as e:
@@ -598,7 +610,7 @@ with tab_import:
 
     if us_real:
         try:
-            df = pd.read_csv(us_real, encoding='cp932')
+            df = read_csv_auto(us_real)
             realized_parts.append(parse_realized_us(df))
             st.success(f"米国株 実現損益: {len(df)}件 ✅")
         except Exception as e:
@@ -606,7 +618,7 @@ with tab_import:
 
     if jp_hist:
         try:
-            df = pd.read_csv(jp_hist, encoding='cp932')
+            df = read_csv_auto(jp_hist)
             history_parts.append(parse_history_jp(df))
             st.success(f"日本株 取引履歴: {len(df)}件 ✅")
         except Exception as e:
@@ -614,7 +626,7 @@ with tab_import:
 
     if us_hist:
         try:
-            df = pd.read_csv(us_hist, encoding='cp932')
+            df = read_csv_auto(us_hist)
             history_parts.append(parse_history_us(df))
             st.success(f"米国株 取引履歴: {len(df)}件 ✅")
         except Exception as e:
