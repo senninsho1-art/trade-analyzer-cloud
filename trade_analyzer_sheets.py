@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -18,1807 +18,1268 @@ except ImportError:
     YFINANCE_AVAILABLE = False
 
 st.set_page_config(
-    page_title="トレード分析＆資金管理",
-    page_icon="📊",
+    page_title="TradeLog",
+    page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_ebar="collapsed"
 )
 
-# ==================== カスタムCSS（モバイルファースト・黒×白×濃緑） ====================
+# ==================== CSS ====================
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
 
 :root {
-    --black: #0a0a0a;
-    --white: #f7f7f5;
-    --green: #1a4a2e;
-    --green-mid: #2d6e47;
-    --green-light: #3d9960;
-    --green-glow: rgba(26,74,46,0.15);
-    --gray-dark: #1c1c1c;
-    --gray-mid: #2e2e2e;
-    --border: #2a2a2a;
-    --yellow: #d4a017;
-    --red: #c0392b;
+    --bg:       #0d0f0e;
+    --surface:  #161a18;
+    --surface2: #1e2421;
+    --border:   #2a312e;
+    --green:    #00e676;
+    --green-dim:#1a4a2e;
+    --red:      #ef5350;
+    --blue:     #42a5f5;
+    --yellow:   #ffca28;
+    --text:     #e8ede9;
+    --text2:    #8a9e91;
+    --mono:     'DM Mono', monospace;
+    --sans:     'DM Sans', sans-serif;
 }
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, [class*="css"] {
-    font-family: 'Noto Sans JP', sans-serif;
-    background-color: var(--black) !important;
-    color: var(--white) !important;
+    font-family: var(--sans) !important;
+    background: var(--bg) !important;
+    color: var(--text) !important;
 }
+
+/* スクロールバー */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .main .block-container {
-    padding-top: 60px !important;
-    padding-bottom: 1rem;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-    max-width: 100%;
-    background-color: var(--black) !important;
+    padding: 56px 12px 24px !important;
+    max-width: 100% !important;
+    background: var(--bg) !important;
 }
 
-/* タブを画面上部に固定 */
+/* タブ固定 */
 div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
+    top: 0 !important; left: 0 !important; right: 0 !important;
     z-index: 99999 !important;
-    background-color: var(--gray-dark) !important;
-    padding: 6px 8px 0 8px !important;
-    border-bottom: 2px solid var(--green) !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: 0 8px !important;
+    gap: 0 !important;
 }
 div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button {
-    font-size: 11px !important;
-    padding: 10px 6px !important;
-    min-width: 0 !important;
-    font-family: 'Space Mono', monospace !important;
-    color: #666 !important;
+    font-family: var(--mono) !important;
+    font-size: 10px !important;
+    padding: 14px 10px !important;
+    color: var(--text2) !important;
+    border-bottom: 2px solid transparent !important;
+    letter-spacing: 0.04em !important;
 }
 div[data-testid="stTabs"] > div[data-baseweb="tab-list"] button[aria-selected="true"] {
-    color: var(--green-light) !important;
-    border-bottom: 2px solid var(--green-light) !important;
+    color: var(--green) !important;
+    border-bottom: 2px solid var(--green) !important;
 }
 div[data-testid="stTabs"] > div[data-testid="stTabPanel"] {
-    padding-top: 52px !important;
+    padding-top: 0 !important;
 }
 
-h1 { font-size: 1.1rem !important; font-family: 'Space Mono', monospace !important; color: var(--green-light) !important; }
-h2 { font-size: 1.0rem !important; font-family: 'Space Mono', monospace !important; }
-h3 { font-size: 0.95rem !important; }
+/* ボタン */
+.stButton > button {
+    font-family: var(--mono) !important;
+    font-size: 12px !important;
+    border-radius: 6px !important;
+    height: 44px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--surface2) !important;
+    color: var(--text) !important;
+    transition: all 0.12s ease !important;
+    width: 100% !important;
+}
+.stButton > button:hover {
+    border-color: var(--green) !important;
+    color: var(--green) !important;
+    background: rgba(0,230,118,0.06) !important;
+}
+.stButton > button[kind="primary"] {
+    background: var(--green-dim) !important;
+    border-color: var(--green) !important;
+    color: var(--green) !important;
+    font-weight: 600 !important;
+}
 
-.stButton button {
-    width: 100%;
-    height: 44px;
-    font-size: 13px;
-    margin: 3px 0;
-    border-radius: 8px;
-    font-family: 'Space Mono', monospace !important;
-}
-.stButton button[kind="primary"] {
-    background-color: var(--green) !important;
-    border-color: var(--green-mid) !important;
-    color: white !important;
-}
-.stButton button[kind="primary"]:hover {
-    background-color: var(--green-mid) !important;
+/* タイルボタン系 */
+div[data-tag-type="large"] .stButton > button {
+    height: 52px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
 }
 
-.stTextInput input, .stNumberInput input, .stSelectbox select {
-    height: 42px;
-    font-size: 14px;
-    background-color: var(--gray-dark) !important;
-    border-color: var(--border) !important;
-    color: var(--white) !important;
-    border-radius: 8px !important;
+/* 入力 */
+.stTextInput input, .stNumberInput input, .stSelectbox > div > div {
+    background: var(--surface2) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text) !important;
+    border-radius: 6px !important;
+    font-family: var(--mono) !important;
+    font-size: 13px !important;
 }
 .stTextInput input:focus, .stNumberInput input:focus {
-    border-color: var(--green-mid) !important;
-    box-shadow: 0 0 0 2px var(--green-glow) !important;
+    border-color: var(--green) !important;
+    box-shadow: 0 0 0 2px rgba(0,230,118,0.12) !important;
 }
 
+/* メトリクス */
+[data-testid="stMetric"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+}
+[data-testid="stMetricValue"] {
+    font-family: var(--mono) !important;
+    font-size: 20px !important;
+}
+
+/* データフレーム */
 .stDataFrame { font-size: 12px !important; }
 
+/* ラジオ */
+div[data-testid="stRadio"] label { font-size: 12px !important; }
+
+/* チェックボックス */
+.stCheckbox label { font-size: 13px !important; }
+
 /* カスタムコンポーネント */
-.pos-table-header {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
-    padding: 8px 14px;
-    background: var(--green);
-    border-radius: 8px 8px 0 0;
-    font-family: 'Space Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    color: rgba(255,255,255,0.6);
-    text-transform: uppercase;
-    gap: 4px;
-}
-.pos-row {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
-    padding: 11px 14px;
-    gap: 4px;
-    border-bottom: 1px solid var(--border);
-    background: var(--gray-dark);
-    align-items: center;
-    cursor: pointer;
-    transition: background 0.15s;
+.trade-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
     position: relative;
 }
-.pos-row:last-child { border-radius: 0 0 8px 8px; border-bottom: none; }
-.pos-row:hover { background: rgba(255,255,255,0.04); }
-.pos-row.selected { background: var(--green-glow) !important; }
-.pos-row .left-bar-green::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: var(--green-light);
-    border-radius: 0 2px 2px 0;
-}
-.pos-row .left-bar-yellow::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: var(--yellow);
-    border-radius: 0 2px 2px 0;
-}
-.ticker-name { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; }
-.stock-sub { font-size: 10px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.num-cell { font-family: 'Space Mono', monospace; font-size: 11px; text-align: right; color: #999; }
-.pnl-pos { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; text-align: right; color: var(--green-light); }
-.pnl-neg { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; text-align: right; color: var(--red); }
-.badge-done {
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 9px; font-family: 'Space Mono', monospace;
-    padding: 2px 6px; border-radius: 4px; letter-spacing: 0.06em;
-    background: rgba(61,153,96,0.15); color: var(--green-light);
-    border: 1px solid rgba(61,153,96,0.3);
-}
-.badge-pending {
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 9px; font-family: 'Space Mono', monospace;
-    padding: 2px 6px; border-radius: 4px; letter-spacing: 0.06em;
-    background: rgba(212,160,23,0.12); color: var(--yellow);
-    border: 1px solid rgba(212,160,23,0.3);
-}
-.form-panel {
-    background: var(--gray-mid);
-    border: 1px solid var(--green-mid);
-    border-radius: 12px;
-    padding: 16px;
-    margin: 8px 0 16px 0;
-}
-.form-title {
-    font-family: 'Space Mono', monospace;
+.trade-card.win  { border-left: 3px solid var(--red); }
+.trade-card.loss { border-left: 3px solid var(--blue); }
+.trade-card.untagged { border-left: 3px solid var(--yellow); }
+
+.tc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.tc-ticker  { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+.tc-name    { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.tc-pl-pos  { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--red); }
+.tc-pl-neg  { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--blue); }
+.tc-meta    { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.tc-meta span { font-size: 10px; color: var(--text2); font-family: var(--mono); }
+
+.tile-grid  { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tile-btn {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text2);
+    font-family: var(--mono);
     font-size: 11px;
-    letter-spacing: 0.1em;
-    color: var(--green-light);
-    margin-bottom: 14px;
-}
-.entered-card {
-    background: var(--gray-dark);
-    border: 1px solid rgba(26,74,46,0.4);
-    border-left: 3px solid var(--green-light);
-    border-radius: 8px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-}
-.entered-ticker { font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; }
-.entered-sub { font-size: 10px; color: #888; margin-top: 2px; }
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-top: 10px; }
-.d-label { font-size: 9px; color: #888; font-family: 'Space Mono', monospace; letter-spacing: 0.06em; margin-bottom: 1px; }
-.d-val { font-size: 12px; font-family: 'Space Mono', monospace; }
-.d-val-green { color: var(--green-light); }
-.notif-bar {
-    background: rgba(212,160,23,0.08);
-    border: 1px solid rgba(212,160,23,0.25);
-    border-radius: 8px;
-    padding: 10px 14px;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     cursor: pointer;
+    transition: all 0.1s;
+    white-space: nowrap;
 }
-.notif-text { font-size: 12px; color: var(--yellow); }
-.notif-count {
-    font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
-    background: var(--yellow); color: var(--black);
-    border-radius: 10px; padding: 2px 8px;
+.tile-btn.active {
+    border-color: var(--green);
+    background: rgba(0,230,118,0.1);
+    color: var(--green);
 }
-.summary-grid {
-    display: grid; grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px; margin-bottom: 16px;
+.tile-btn.active-sub {
+    border-color: #42a5f5;
+    background: rgba(66,165,245,0.1);
+    color: #42a5f5;
 }
-.summary-card {
-    background: var(--gray-dark);
+
+.stat-grid  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+.stat-card  {
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 12px 10px;
+    padding: 10px 12px;
     text-align: center;
 }
-.summary-card.hl { border-color: var(--green-mid); background: linear-gradient(135deg, var(--gray-dark), rgba(26,74,46,0.2)); }
-.s-val { font-family: 'Space Mono', monospace; font-size: 16px; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
-.s-val-pos { color: var(--green-light); }
-.s-val-neg { color: var(--red); }
-.s-val-yellow { color: var(--yellow); }
-.s-lbl { font-size: 10px; color: #888; }
-.section-label {
-    font-family: 'Space Mono', monospace;
-    font-size: 10px; letter-spacing: 0.12em;
-    color: var(--green-light); text-transform: uppercase;
-    margin-bottom: 10px; margin-top: 4px;
+.stat-val   { font-family: var(--mono); font-size: 18px; font-weight: 600; line-height: 1.2; }
+.stat-lbl   { font-size: 9px; color: var(--text2); margin-top: 3px; letter-spacing: 0.06em; text-transform: uppercase; }
+.val-pos    { color: var(--red); }
+.val-neg    { color: var(--blue); }
+.val-green  { color: var(--green); }
+.val-yellow { color: var(--yellow); }
+
+.section-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin: 16px 0 10px;
     display: flex; align-items: center; gap: 8px;
 }
-.import-date { font-size: 0.72rem; color: #666; margin-top: 4px; text-align: center; font-family: 'Space Mono', monospace; }
+.section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
 
-/* 設定タブ削除ボタン */
-.del-btn button { background: rgba(192,57,43,0.15) !important; border-color: rgba(192,57,43,0.4) !important; color: #e74c3c !important; }
+.badge {
+    display: inline-flex; align-items: center;
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em;
+    padding: 2px 7px; border-radius: 4px; font-weight: 500;
+}
+.badge-win    { background: rgba(239,83,80,0.12);  color: var(--red);    border: 1px solid rgba(239,83,80,0.3); }
+.badge-loss   { background: rgba(66,165,245,0.12); color: var(--blue);   border: 1px solid rgba(66,165,245,0.3); }
+.badge-tagged { background: rgba(0,230,118,0.12);  color: var(--green);  border: 1px solid rgba(0,230,118,0.3); }
+.badge-pending{ background: rgba(255,202,40,0.12); color: var(--yellow); border: 1px solid rgba(255,202,40,0.3); }
+
+.pos-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+}
+.pos-ticker { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+.pos-sub    { font-size: 10px; color: var(--text2); margin-top: 2px; }
+.pos-right  { text-align: right; }
+.pos-qty    { font-family: var(--mono); font-size: 13px; }
+.pos-avg    { font-size: 10px; color: var(--text2); font-family: var(--mono); }
+
+.counter-badge {
+    display: inline-block;
+    background: var(--yellow);
+    color: #000;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 10px;
+}
+.star-btn { font-size: 22px; cursor: pointer; opacity: 0.35; transition: opacity 0.1s; }
+.star-btn.active { opacity: 1; }
+
+.import-drop {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 24px 16px;
+    text-align: center;
+    background: var(--surface);
+    transition: border-color 0.15s;
+}
+.import-drop:hover { border-color: var(--green); }
+
+.filter-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+
+div[data-testid="stExpander"] {
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    background: var(--surface) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ==================== Google Sheets ====================
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+TRADELOG_SHEET = 'Trade_Log'
+POSITIONS_SHEET = 'Positions'
+SETTINGS_SHEET = 'Settings'
 
-def get_google_sheets_client():
-    try:
-        gcp_json_str = os.environ.get("GCP_SERVICE_ACCOUNT_JSON", "")
-        if gcp_json_str:
-            service_account_info = json.loads(gcp_json_str)
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info, scopes=SCOPES)
-            service = build('sheets', 'v4', credentials=credentials)
-            return service.spreadsheets()
-        if hasattr(st, 'secrets') and "gcp_service_account" in st.secrets:
-            credentials = service_account.Credentials.from_service_account_info(
-                st.secrets["gcp_service_account"], scopes=SCOPES)
-            service = build('sheets', 'v4', credentials=credentials)
-            return service.spreadsheets()
-        return None
-    except Exception as e:
-        st.error(f"Google Sheets接続エラー: {str(e)}")
-        return None
-
-def get_spreadsheet_id():
-    sid = os.environ.get("SPREADSHEET_ID", "")
-    if sid:
-        return sid
-    try:
-        return st.secrets.get("spreadsheet_id", "")
-    except:
-        return ""
-
-def read_sheet(sheets_client, spreadsheet_id, sheet_name, has_header=True):
-    try:
-        result = sheets_client.values().get(
-            spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!A:Z"
-        ).execute()
-        values = result.get('values', [])
-        if not values:
-            return pd.DataFrame()
-        if has_header and len(values) > 0:
-            headers = values[0]
-            rows = values[1:]
-            # 列数を揃える
-            rows = [r + [''] * (len(headers) - len(r)) for r in rows]
-            df = pd.DataFrame(rows, columns=headers)
-        else:
-            df = pd.DataFrame(values)
-        return df
-    except HttpError as e:
-        if e.resp.status == 404:
-            return pd.DataFrame()
-        st.error(f"読み込みエラー ({sheet_name}): {str(e)}")
-        return pd.DataFrame()
-
-def write_sheet(sheets_client, spreadsheet_id, sheet_name, df, clear_first=True):
-    try:
-        values = [df.columns.tolist()] + df.fillna('').astype(str).values.tolist()
-        if clear_first:
-            sheets_client.values().clear(
-                spreadsheetId=spreadsheet_id,
-                range=f"{sheet_name}!A:Z"
-            ).execute()
-        body = {'values': values}
-        sheets_client.values().update(
-            spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!A1",
-            valueInputOption='RAW',
-            body=body
-        ).execute()
-        return True
-    except Exception as e:
-        st.error(f"書き込みエラー ({sheet_name}): {str(e)}")
-        return False
-
-def append_to_sheet(sheets_client, spreadsheet_id, sheet_name, row_data):
-    try:
-        if isinstance(row_data, pd.DataFrame):
-            values = row_data.fillna('').astype(str).values.tolist()
-        elif isinstance(row_data, dict):
-            values = [[str(v) for v in row_data.values()]]
-        else:
-            values = [row_data]
-        body = {'values': values}
-        sheets_client.values().append(
-            spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!A:Z",
-            valueInputOption='RAW',
-            insertDataOption='INSERT_ROWS',
-            body=body
-        ).execute()
-        return True
-    except Exception as e:
-        st.error(f"追加エラー ({sheet_name}): {str(e)}")
-        return False
-
-def ensure_sheet_exists(sheets_client, spreadsheet_id, sheet_name):
-    try:
-        result = sheets_client.get(spreadsheetId=spreadsheet_id).execute()
-        existing = [s['properties']['title'] for s in result.get('sheets', [])]
-        if sheet_name not in existing:
-            body = {'requests': [{'addSheet': {'properties': {'title': sheet_name}}}]}
-            sheets_client.batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
-    except Exception:
-        pass
-
-# ==================== v5 trade_reasons カラム定義 ====================
-TRADE_REASONS_COLS = [
-    'id',
-    'ticker_code', 'stock_name',
-    'trade_type',          # spot=現物 / margin=信用
-    'entry_date', 'entry_price', 'quantity',
-    'entry_reason_large', 'entry_reason_medium', 'entry_reason_small',
-    'entry_memo',
-    'stop_loss_type', 'stop_loss_price',
-    'exit_date', 'exit_price',
-    'exit_reason_large', 'exit_reason_medium', 'exit_reason_small',
-    'exit_memo',
-    'profit_loss', 'profit_loss_pct',
-    'status',              # active=保有中 / closed=決済済み
-    'created_at', 'updated_at'
+TRADELOG_COLS = [
+    'id', 'market',
+    'ticker', 'name',
+    'trade_date', 'build_date',      # 約定日, 建約定日
+    'quantity', 'sell_price', 'avg_cost',
+    'realized_pl', 'realized_pl_pct',
+    'hold_days',
+    'tag_large', 'tag_detail',
+    'satisfaction',                  # 1-5
+    'stop_loss_price', 'discipline', # 規律
+    'memo',
+    'created_at'
 ]
 
-def init_spreadsheet(sheets_client, spreadsheet_id):
-    """必要なシートを初期化（active_trades / closed_trades は作らない）"""
-    for sheet in ['trades', 'trade_reasons', 'reason_definitions', 'settings', 'manual_positions']:
-        ensure_sheet_exists(sheets_client, spreadsheet_id, sheet)
+@st.cache_resource
+def get_sheets_client():
+    try:
+        gcp = os.environ.get("GCP_SERVICE_ACCOUNT_JSON", "")
+        if gcp:
+            info = json.loads(gcp)
+            cred = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+            return build('sheets', 'v4', credentials=cred).spreadsheets()
+        if hasattr(st, 'secrets') and "gcp_service_account" in st.secrets:
+            cred = service_account.Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"], scopes=SCOPES)
+            return build('sheets', 'v4', credentials=cred).spreadsheets()
+        return None
+    except Exception as e:
+        st.error(f"Sheets接続エラー: {e}")
+        return None
 
-    # settings 初期化
-    settings_df = read_sheet(sheets_client, spreadsheet_id, 'settings')
-    if len(settings_df) == 0:
-        settings_df = pd.DataFrame({
-            'id': [1],
-            'total_capital': [1000000],
-            'risk_per_trade_pct': [0.2],
-            'updated_at': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
-        })
-        write_sheet(sheets_client, spreadsheet_id, 'settings', settings_df)
+def get_sid():
+    sid = os.environ.get("SPREADSHEET_ID", "")
+    if sid: return sid
+    try: return st.secrets.get("spreadsheet_id", "")
+    except: return ""
 
-    # trade_reasons ヘッダー初期化
-    tr_df = read_sheet(sheets_client, spreadsheet_id, 'trade_reasons')
-    if len(tr_df) == 0:
-        write_sheet(sheets_client, spreadsheet_id, 'trade_reasons',
-                    pd.DataFrame(columns=TRADE_REASONS_COLS))
-
-    # reason_definitions 初期化
-    reason_df = read_sheet(sheets_client, spreadsheet_id, 'reason_definitions')
-    if len(reason_df) == 0:
-        initial_reasons = [
-            ('entry','large','','打診買い',1),
-            ('entry','large','','追撃買い',1),
-            ('entry','large','','ナンピン',1),
-            ('entry','large','','ポジション調整',1),
-            ('entry','medium','打診買い','順張り',1),
-            ('entry','medium','打診買い','逆張り',1),
-            ('entry','medium','打診買い','イベント',1),
-            ('entry','medium','追撃買い','順張り',1),
-            ('entry','medium','追撃買い','逆張り',1),
-            ('entry','medium','追撃買い','イベント',1),
-            ('entry','medium','ナンピン','逆張り',1),
-            ('entry','medium','ポジション調整','順張り',1),
-            ('entry','medium','ポジション調整','逆張り',1),
-            ('entry','small','順張り','MAブレイク',1),
-            ('entry','small','順張り','高値ブレイク',1),
-            ('entry','small','順張り','短期MA反発',1),
-            ('entry','small','逆張り','MA乖離率',1),
-            ('entry','small','逆張り','二番底',1),
-            ('entry','small','逆張り','窓埋め',1),
-            ('entry','small','逆張り','直近安値',1),
-            ('entry','small','逆張り','節目',1),
-            ('entry','small','イベント','決算期待',1),
-            ('entry','small','イベント','決算後急騰',1),
-            ('entry','small','イベント','決算後暴落',1),
-            ('entry','small','イベント','材料',1),
-            ('entry','small','イベント','ニュース',1),
-            ('stop_loss','small','','総資産の0.2%減',1),
-            ('stop_loss','small','','買値-5%',1),
-            ('stop_loss','small','','買値-10%',1),
-            ('stop_loss','small','','直近安値',1),
-            ('stop_loss','small','','節目',1),
-            ('exit','large','','利確',1),
-            ('exit','large','','損切り',1),
-            ('exit','large','','調整',1),
-            ('exit','medium','利確','目標達成',1),
-            ('exit','medium','利確','利益確定',1),
-            ('exit','medium','損切り','ルール損切り',1),
-            ('exit','medium','損切り','判断損切り',1),
-            ('exit','medium','調整','ポジション縮小',1),
-            ('exit','small','目標達成','目標株価到達',1),
-            ('exit','small','利益確定','高値圏での売り',1),
-            ('exit','small','ルール損切り','逆指値',1),
-            ('exit','small','ルール損切り','損切りライン到達',1),
-            ('exit','small','判断損切り','シナリオ崩れ',1),
-            ('exit','small','判断損切り','方向感喪失',1),
-            ('exit','small','ポジション縮小','部分利確',1),
-            ('exit','small','ポジション縮小','リスク管理',1),
-        ]
-        reason_df = pd.DataFrame(initial_reasons,
-                                  columns=['reason_type','level','parent','name','is_active'])
-        write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', reason_df)
-
-def create_spreadsheet_if_needed(sheets_client):
-    spreadsheet_id = get_spreadsheet_id()
-    if not spreadsheet_id:
-        st.warning("スプレッドシートIDが設定されていません。新規作成します。")
-        spreadsheet = {
-            'properties': {'title': 'トレード分析データ'},
-            'sheets': [{'properties': {'title': s}} for s in
-                       ['trades', 'trade_reasons', 'reason_definitions', 'settings', 'manual_positions']]
-        }
-        try:
-            result = sheets_client.create(body=spreadsheet).execute()
-            new_id = result['spreadsheetId']
-            st.success("スプレッドシート作成完了！")
-            st.code(f'SPREADSHEET_ID="{new_id}"')
-            return new_id
-        except Exception as e:
-            st.error(f"作成エラー: {str(e)}")
-            return None
-    return spreadsheet_id
-
-# ==================== 設定 ====================
-def load_settings(sheets_client, spreadsheet_id):
-    df = read_sheet(sheets_client, spreadsheet_id, 'settings')
-    if len(df) > 0:
-        return {
-            'total_capital': float(df.iloc[0]['total_capital']),
-            'risk_per_trade_pct': float(df.iloc[0]['risk_per_trade_pct'])
-        }
-    return {'total_capital': 1000000, 'risk_per_trade_pct': 0.2}
-
-def save_settings(sheets_client, spreadsheet_id, total_capital, risk_per_trade_pct):
-    settings_df = pd.DataFrame({
-        'id': [1],
-        'total_capital': [int(total_capital)],
-        'risk_per_trade_pct': [float(risk_per_trade_pct)],
-        'updated_at': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
-    })
-    return write_sheet(sheets_client, spreadsheet_id, 'settings', settings_df)
-
-# ==================== 理由マスタ ====================
-def get_reason_definitions(sheets_client, spreadsheet_id):
-    df = read_sheet(sheets_client, spreadsheet_id, 'reason_definitions')
-    if len(df) == 0:
-        return pd.DataFrame(columns=['reason_type','level','parent','name','is_active'])
-    if 'is_active' in df.columns:
-        df['is_active'] = df['is_active'].astype(str)
-        df = df[df['is_active'] == '1'].reset_index(drop=True)
-    return df
-
-def get_large(df_defs, rtype):
-    return df_defs[(df_defs['reason_type']==rtype)&(df_defs['level']=='large')]['name'].tolist()
-
-def get_medium(df_defs, rtype, large):
-    return df_defs[(df_defs['reason_type']==rtype)&(df_defs['level']=='medium')&(df_defs['parent']==large)]['name'].tolist()
-
-def get_small(df_defs, rtype, medium):
-    return df_defs[(df_defs['reason_type']==rtype)&(df_defs['level']=='small')&(df_defs['parent']==medium)]['name'].tolist()
-
-def get_stoploss_items(df_defs):
-    return df_defs[(df_defs['reason_type']=='stop_loss')&(df_defs['level']=='small')]['name'].tolist()
-
-def format_reason(large, medium, small):
-    parts = [x for x in [large, medium, small] if x and x not in ('', '（なし）', 'nan')]
-    return ' / '.join(parts)
-
-# ==================== trade_reasons CRUD (v5) ====================
-def load_trade_reasons(sheets_client, spreadsheet_id):
-    df = read_sheet(sheets_client, spreadsheet_id, 'trade_reasons')
-    if len(df) == 0:
-        return pd.DataFrame(columns=TRADE_REASONS_COLS)
-    for col in TRADE_REASONS_COLS:
-        if col not in df.columns:
-            df[col] = ''
-    return df
-
-def upsert_trade_reason(sheets_client, spreadsheet_id, record: dict):
-    """ticker_code + entry_date + trade_type をキーに UPSERT"""
-    df = load_trade_reasons(sheets_client, spreadsheet_id)
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    record['updated_at'] = now_str
-
-    mask = (
-        (df['ticker_code'].astype(str) == str(record.get('ticker_code', ''))) &
-        (df['entry_date'].astype(str).str[:10] == str(record.get('entry_date', ''))[:10]) &
-        (df['trade_type'].astype(str) == str(record.get('trade_type', '')))
-    )
-    if mask.any():
-        for col, val in record.items():
-            if col not in ('id', 'created_at'):
-                df.loc[mask, col] = val
-    else:
-        if not record.get('id'):
-            record['id'] = str(uuid.uuid4())[:8]
-        if not record.get('created_at'):
-            record['created_at'] = now_str
-        # 欠損カラムを補完
-        for col in TRADE_REASONS_COLS:
-            if col not in record:
-                record[col] = ''
-        df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-
-    return write_sheet(sheets_client, spreadsheet_id, 'trade_reasons', df)
-
-def detect_and_close_positions(sheets_client, spreadsheet_id, df_trades):
-    """CSVインポート後に呼ぶ。売付/売埋を検知して status=closed に更新"""
-    df_tr = load_trade_reasons(sheets_client, spreadsheet_id)
-    if len(df_tr) == 0:
-        return
-    active = df_tr[df_tr['status'].astype(str) == 'active']
-    if len(active) == 0:
-        return
-
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    changed = False
-    for idx, row in active.iterrows():
-        ticker = str(row['ticker_code'])
-        trade_type = str(row['trade_type'])
-        if trade_type == 'margin':
-            sell_actions = ['売埋']
-        else:
-            sell_actions = ['売付']
-        sells = df_trades[
-            (df_trades['ticker_code'].astype(str) == ticker) &
-            (df_trades['trade_action'].isin(sell_actions))
-        ].sort_values('trade_date', ascending=False)
-        if len(sells) > 0:
-            latest_sell = sells.iloc[0]
-            ep = float(row['entry_price']) if row['entry_price'] else 0.0
-            xp = float(latest_sell['price']) if latest_sell['price'] else 0.0
-            qty = float(row['quantity']) if row['quantity'] else 0.0
-            pl = (xp - ep) * qty
-            pl_pct = ((xp - ep) / ep * 100) if ep > 0 else 0.0
-            df_tr.at[idx, 'exit_date'] = str(latest_sell['trade_date'])[:10]
-            df_tr.at[idx, 'exit_price'] = str(xp)
-            df_tr.at[idx, 'profit_loss'] = str(round(pl, 0))
-            df_tr.at[idx, 'profit_loss_pct'] = str(round(pl_pct, 2))
-            df_tr.at[idx, 'status'] = 'closed'
-            df_tr.at[idx, 'updated_at'] = now_str
-            changed = True
-
-    if changed:
-        write_sheet(sheets_client, spreadsheet_id, 'trade_reasons', df_tr)
-
-# ==================== CSV パース ====================
-def parse_jp_csv(df):
-    numeric_columns = ['数量［株］', '単価［円］', '手数料［円］', '税金等［円］', '受渡金額［円］']
-    for col in numeric_columns:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(',', '').str.strip()
-            df[col] = df[col].replace({'-': None, '': None, 'nan': None})
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    parsed = pd.DataFrame({
-        'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d').dt.strftime('%Y-%m-%d'),
-        'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
-        'market': '日本株',
-        'ticker_code': df['銘柄コード'].astype(str).str.strip(),
-        'stock_name': df['銘柄名'],
-        'account_type': df['取引区分'],
-        'trade_type': df['口座区分'],
-        'trade_action': df['売買区分'],
-        'quantity': pd.to_numeric(df['数量［株］'], errors='coerce').fillna(0).astype(int),
-        'price': df['単価［円］'],
-        'commission': df['手数料［円］'],
-        'tax': df['税金等［円］'],
-        'total_amount': df['受渡金額［円］'].abs(),
-        'exchange_rate': '',
-        'currency': 'JPY',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
-    return parsed
-
-def parse_us_csv(df):
-    numeric_columns = ['数量［株］', '単価［USドル］', '為替レート', '手数料［USドル］', '税金［USドル］', '受渡金額［円］']
-    for col in numeric_columns:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(',', '').str.strip()
-            df[col] = df[col].replace({'-': None, '': None, 'nan': None})
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    parsed = pd.DataFrame({
-        'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d').dt.strftime('%Y-%m-%d'),
-        'settlement_date': pd.to_datetime(df['受渡日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
-        'market': '米国株',
-        'ticker_code': df['ティッカー'].astype(str).str.strip(),
-        'stock_name': df['銘柄名'],
-        'account_type': df['取引区分'],
-        'trade_type': df['口座'],
-        'trade_action': df['売買区分'],
-        'quantity': df['数量［株］'].astype(int),
-        'price': df['単価［USドル］'],
-        'commission': df['手数料［USドル］'],
-        'tax': df['税金［USドル］'],
-        'total_amount': df['受渡金額［円］'].abs(),
-        'exchange_rate': df['為替レート'],
-        'currency': 'USD',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
-    return parsed
-
-# ==================== ポジション計算 ====================
-def load_all_trades(sheets_client, spreadsheet_id):
-    df = read_sheet(sheets_client, spreadsheet_id, 'trades')
-    if len(df) > 0:
-        df['trade_date'] = pd.to_datetime(df['trade_date'])
-        for col in ['quantity', 'price', 'commission', 'tax', 'total_amount']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        if 'ticker_code' in df.columns:
-            df['ticker_code'] = df['ticker_code'].astype(str).str.strip()
-            def clean_ticker(t):
-                try:
-                    f = float(t)
-                    if f == int(f):
-                        return str(int(f))
-                    return t
-                except:
-                    return t
-            df['ticker_code'] = df['ticker_code'].apply(clean_ticker)
-    return df
-
-def calc_avg_price(rows_sorted, buy_actions, sell_action, kenin_sell=False):
-    qty = 0.0
-    avg = 0.0
-    for _, row in rows_sorted.iterrows():
-        action = str(row.get('trade_action', ''))
-        acct   = str(row.get('account_type', ''))
-        q = float(row['quantity']) if not pd.isna(row['quantity']) else 0.0
-        p = float(row['price']) if not pd.isna(row['price']) else 0.0
-        is_kenin = (acct == '現引')
-        if action in buy_actions:
-            total_cost = avg * qty + p * q
-            qty += q
-            avg = total_cost / qty if qty > 0 else 0.0
-        elif is_kenin and not kenin_sell:
-            effective_p = p if p > 0 else avg
-            total_cost = avg * qty + effective_p * q
-            qty += q
-            avg = total_cost / qty if qty > 0 else 0.0
-        elif action == sell_action or (is_kenin and kenin_sell):
-            qty -= q
-            if qty <= 0:
-                qty = 0.0
-                avg = 0.0
-    return avg
-
-def calculate_position_summary(df):
-    if len(df) == 0:
+def read_sheet(client, sid, sheet, has_header=True):
+    try:
+        r = client.values().get(spreadsheetId=sid, range=f"{sheet}!A:ZZ").execute()
+        vals = r.get('values', [])
+        if not vals: return pd.DataFrame()
+        if has_header:
+            h = vals[0]; rows = [v + [''] * (len(h) - len(v)) for v in vals[1:]]
+            return pd.DataFrame(rows, columns=h)
+        return pd.DataFrame(vals)
+    except HttpError as e:
+        if e.resp.status == 404: return pd.DataFrame()
         return pd.DataFrame()
-    df = df[df['trade_action'] != '売買区分'].copy()
-    df = df[df['ticker_code'] != '銘柄コード']
-    df = df[df['ticker_code'].notna() & (df['ticker_code'] != '')]
-    df['quantity'] = pd.to_numeric(df['quantity'].astype(str).str.replace(',','').str.strip(), errors='coerce').fillna(0)
-    df['price']    = pd.to_numeric(df['price'].astype(str).str.replace(',','').str.strip(), errors='coerce').fillna(0)
-    df = df.sort_values('trade_date').reset_index(drop=True)
-    summary = []
-    for ticker in df['ticker_code'].unique():
-        r = df[df['ticker_code'] == ticker]
-        name_rows  = r[r['stock_name'].notna() & (r['stock_name'] != '')]
-        stock_name = name_rows.iloc[0]['stock_name'] if len(name_rows) > 0 else ticker
-        market     = name_rows.iloc[0]['market']     if len(name_rows) > 0 else '日本株'
-        kenin_rows = r[(r['account_type'] == '現引') & (~r['trade_action'].isin(['買建', '売埋']))]
-        kenin_qty  = kenin_rows['quantity'].sum()
-        if market == '米国株':
-            buy_qty   = r[r['trade_action'] == '買付']['quantity'].sum()
-            sell_qty  = r[r['trade_action'] == '売付']['quantity'].sum()
-            nyuko_qty = 0
-        else:
-            spot_rows = r[r['account_type'] == '現物']
-            buy_qty   = spot_rows[spot_rows['trade_action'] == '買付']['quantity'].sum()
-            sell_qty  = spot_rows[spot_rows['trade_action'] == '売付']['quantity'].sum()
-            nyuko_qty = r[r['trade_action'] == '入庫']['quantity'].sum()
-        spot_qty   = buy_qty + nyuko_qty + kenin_qty - sell_qty
-        mbuy_qty   = r[r['trade_action'] == '買建']['quantity'].sum()
-        msell_qty  = r[r['trade_action'] == '売埋']['quantity'].sum()
-        margin_qty = mbuy_qty - msell_qty - kenin_qty
-        if spot_qty > 0:
-            if market == '米国株':
-                spot_r = r[r['trade_action'].isin(['買付','売付']) |
-                           ((r['account_type'] == '現引') & (~r['trade_action'].isin(['買建','売埋'])))].copy()
-            else:
-                spot_r = r[((r['account_type'] == '現物') & r['trade_action'].isin(['買付','売付'])) |
-                           (r['trade_action'] == '入庫') |
-                           ((r['account_type'] == '現引') & (~r['trade_action'].isin(['買建','売埋'])))].copy()
-            spot_avg = calc_avg_price(spot_r.sort_values('trade_date'),
-                                      buy_actions=['買付','入庫'], sell_action='売付', kenin_sell=False)
-            summary.append({'ticker_code': ticker, 'stock_name': stock_name, 'market': market,
-                            'trade_type': 'spot', 'quantity': int(round(spot_qty)),
-                            'avg_price': round(spot_avg, 2), 'total_cost': round(spot_avg * spot_qty, 0)})
-        if margin_qty > 0:
-            margin_r = r[r['trade_action'].isin(['買建','売埋']) |
-                         ((r['account_type'] == '現引') & (~r['trade_action'].isin(['買建','売埋'])))].copy()
-            margin_avg = calc_avg_price(margin_r.sort_values('trade_date'),
-                                        buy_actions=['買建'], sell_action='売埋', kenin_sell=True)
-            summary.append({'ticker_code': ticker, 'stock_name': stock_name, 'market': market,
-                            'trade_type': 'margin', 'quantity': int(round(margin_qty)),
-                            'avg_price': round(margin_avg, 2), 'total_cost': round(margin_avg * margin_qty, 0)})
-    result = pd.DataFrame(summary)
-    if len(result) > 0:
-        result = result.sort_values('ticker_code').reset_index(drop=True)
+    except: return pd.DataFrame()
+
+def write_sheet(client, sid, sheet, df):
+    try:
+        vals = [df.columns.tolist()] + df.fillna('').astype(str).values.tolist()
+        client.values().clear(spreadsheetId=sid, range=f"{sheet}!A:ZZ").execute()
+        client.values().update(
+            spreadsheetId=sid, range=f"{sheet}!A1",
+            valueInputOption='RAW', body={'values': vals}
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"書き込みエラー: {e}"); return False
+
+def ensure_sheet(client, sid, name):
+    try:
+        r = client.get(spreadsheetId=sid).execute()
+        existing = [s['properties']['title'] for s in r.get('sheets', [])]
+        if name not in existing:
+            client.batchUpdate(spreadsheetId=sid, body={
+                'requests': [{'addSheet': {'properties': {'title': name}}}]
+            }).execute()
+    except: pass
+
+def init_sheets(client, sid):
+    for s in [TRADELOG_SHEET, POSITIONS_SHEET, SETTINGS_SHEET]:
+        ensure_sheet(client, sid, s)
+    df = read_sheet(client, sid, TRADELOG_SHEET)
+    if len(df) == 0:
+        write_sheet(client, sid, TRADELOG_SHEET, pd.DataFrame(columns=TRADELOG_COLS))
+
+# ==================== CSV パーサー ====================
+def _clean_num(s):
+    return pd.to_numeric(
+        s.astype(str).str.replace(',', '').str.replace('−', '-').str.strip(),
+        errors='coerce'
+    ).fillna(0)
+
+def parse_realized_jp(df):
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    result = pd.DataFrame({
+        'market': '日本株',
+        'ticker': df['銘柄コード'].astype(str).str.strip().apply(
+            lambda x: str(int(float(x))) if x.replace('.','').isdigit() else x),
+        'name': df['銘柄名'],
+        'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
+        'build_date': '',
+        'quantity': _clean_num(df['数量[株]']).astype(int),
+        'sell_price': _clean_num(df['売却/決済単価[円]']),
+        'avg_cost': _clean_num(df['平均取得価額[円]']),
+        'realized_pl': _clean_num(df['実現損益[円]']),
+    })
+    # 建約定日があれば
+    if '建約定日' in df.columns:
+        result['build_date'] = pd.to_datetime(df['建約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d')
+    result['realized_pl_pct'] = np.where(
+        result['avg_cost'] > 0,
+        (result['realized_pl'] / (result['avg_cost'] * result['quantity']) * 100).round(2),
+        0.0
+    )
+    result['hold_days'] = ''
     return result
 
-def apply_manual_positions(df_positions, manual_pos_df):
-    if len(df_positions) == 0 or len(manual_pos_df) == 0:
-        return df_positions
-    manual_pos_df = manual_pos_df.copy()
-    manual_pos_df['quantity']  = pd.to_numeric(manual_pos_df['quantity'], errors='coerce').fillna(0)
-    manual_pos_df['avg_price'] = pd.to_numeric(manual_pos_df['avg_price'], errors='coerce').fillna(0)
-    for _, mrow in manual_pos_df.iterrows():
-        mask = ((df_positions['ticker_code'] == mrow['ticker_code']) &
-                (df_positions['trade_type'] == mrow['trade_type']))
-        if mask.any():
-            if float(mrow['quantity']) <= 0:
-                df_positions = df_positions[~mask]
-            else:
-                df_positions.loc[mask, 'quantity']   = int(mrow['quantity'])
-                df_positions.loc[mask, 'avg_price']  = float(mrow['avg_price'])
-                df_positions.loc[mask, 'total_cost'] = round(float(mrow['avg_price']) * float(mrow['quantity']), 0)
-    return df_positions.reset_index(drop=True)
-
-# ==================== 株価取得 ====================
-def get_current_price(ticker_code, market):
-    if not YFINANCE_AVAILABLE:
-        return None
-    try:
-        symbol = f"{ticker_code}.T" if market == '日本株' else str(ticker_code)
-        t = yf.Ticker(symbol)
-        hist = t.history(period='2d')
-        return float(hist['Close'].iloc[-1]) if len(hist) > 0 else None
-    except Exception:
-        return None
-
-# ==================== メイン ====================
-sheets_client = get_google_sheets_client()
-if sheets_client:
-    spreadsheet_id = create_spreadsheet_if_needed(sheets_client)
-    if spreadsheet_id:
-        init_spreadsheet(sheets_client, spreadsheet_id)
-        st.markdown("### 📊 トレード分析＆資金管理")
-
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-            "📥 データ", "🔔 催促", "📊 分析", "💰 資金", "📦 ポジション", "⚙️ 設定"
-        ])
-
-        # ==================== タブ1: データ管理 ====================
-        with tab1:
-            st.subheader("📥 CSVインポート")
-            with st.expander("📖 使い方を見る"):
-                st.markdown(
-                    "1. 楽天証券 → 取引履歴 → **全期間** でCSVダウンロード\n"
-                    "2. 日本株・米国株の両方をアップロード\n"
-                    "3. 「全件差し替えインポート」を押す\n\n"
-                    "⚠️ **全期間**を選ばないと平均取得単価がずれます"
-                )
-            last_import_date = ""
-            df_trades_check = read_sheet(sheets_client, spreadsheet_id, 'trades')
-            if len(df_trades_check) > 0 and 'created_at' in df_trades_check.columns:
-                last_dates = df_trades_check['created_at'].dropna()
-                if len(last_dates) > 0:
-                    last_import_date = last_dates.iloc[-1]
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**① 日本株CSV**")
-                jp_file = st.file_uploader("日本株CSVをアップロード", type=['csv'], key='jp_csv')
-                if jp_file:
-                    df_jp = pd.read_csv(jp_file, encoding='cp932')
-                    st.success(f"読込: {len(df_jp)}件 ✅")
-            with col2:
-                st.markdown("**② 米国株CSV**")
-                us_file = st.file_uploader("米国株CSVをアップロード", type=['csv'], key='us_csv')
-                if us_file:
-                    df_us = pd.read_csv(us_file, encoding='cp932')
-                    st.success(f"読込: {len(df_us)}件 ✅")
-
-            if jp_file or us_file:
-                st.warning("⚠️ 既存の取引データがすべて上書きされます")
-                if st.button("🔄 全件差し替えインポート", use_container_width=True, type="primary"):
-                    with st.spinner('インポート中...'):
-                        parts = []
-                        if jp_file:
-                            parts.append(parse_jp_csv(df_jp))
-                        if us_file:
-                            parts.append(parse_us_csv(df_us))
-                        combined = pd.concat(parts, ignore_index=True) if len(parts) > 1 else parts[0]
-                        if write_sheet(sheets_client, spreadsheet_id, 'trades', combined, clear_first=True):
-                            # 決済検知
-                            detect_and_close_positions(sheets_client, spreadsheet_id, combined)
-                            st.success(f"✅ {len(combined)}件をインポートしました")
-                            st.rerun()
-            else:
-                st.button("🔄 全件差し替えインポート", use_container_width=True, type="primary", disabled=True)
-
-            if last_import_date:
-                st.markdown(f'<div class="import-date">最終インポート: {last_import_date}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="import-date">最終インポート: なし</div>', unsafe_allow_html=True)
-
-            st.divider()
-            with st.expander("➕ 差分追加インポート（上級者向け・重複注意）"):
-                st.warning("⚠️ 同じ期間のCSVを2回追加すると数量が2倍になります。")
-                col1, col2 = st.columns(2)
-                with col1:
-                    jp_add = st.file_uploader("日本株CSV（追加用）", type=['csv'], key='jp_add')
-                    if jp_add:
-                        df_jp_add = pd.read_csv(jp_add, encoding='cp932')
-                        st.info(f"読込: {len(df_jp_add)}件")
-                        if st.button("日本株を追加", key='add_jp'):
-                            with st.spinner('追加中...'):
-                                parsed = parse_jp_csv(df_jp_add)
-                                existing = read_sheet(sheets_client, spreadsheet_id, 'trades')
-                                combined = pd.concat([existing, parsed], ignore_index=True) if len(existing) > 0 else parsed
-                                if write_sheet(sheets_client, spreadsheet_id, 'trades', combined):
-                                    detect_and_close_positions(sheets_client, spreadsheet_id, combined)
-                                    st.success(f"✅ {len(parsed)}件を追加しました")
-                                    st.rerun()
-                with col2:
-                    us_add = st.file_uploader("米国株CSV（追加用）", type=['csv'], key='us_add')
-                    if us_add:
-                        df_us_add = pd.read_csv(us_add, encoding='cp932')
-                        st.info(f"読込: {len(df_us_add)}件")
-                        if st.button("米国株を追加", key='add_us'):
-                            with st.spinner('追加中...'):
-                                parsed = parse_us_csv(df_us_add)
-                                existing = read_sheet(sheets_client, spreadsheet_id, 'trades')
-                                combined = pd.concat([existing, parsed], ignore_index=True) if len(existing) > 0 else parsed
-                                if write_sheet(sheets_client, spreadsheet_id, 'trades', combined):
-                                    detect_and_close_positions(sheets_client, spreadsheet_id, combined)
-                                    st.success(f"✅ {len(parsed)}件を追加しました")
-                                    st.rerun()
-
-            st.divider()
-            st.subheader("📋 全トレード履歴")
-            df_all = load_all_trades(sheets_client, spreadsheet_id)
-            if len(df_all) > 0:
-                st.caption(f"総件数: {len(df_all)}件")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    market_filter = st.selectbox("市場", ["全て"] + list(df_all['market'].unique()))
-                with col2:
-                    action_filter = st.selectbox("売買", ["全て", "買付", "売付"])
-                with col3:
-                    year_filter = st.selectbox("年", ["全て"] + sorted(df_all['trade_date'].dt.year.unique().tolist(), reverse=True))
-                df_filtered = df_all.copy()
-                if market_filter != "全て":
-                    df_filtered = df_filtered[df_filtered['market'] == market_filter]
-                if action_filter != "全て":
-                    df_filtered = df_filtered[df_filtered['trade_action'] == action_filter]
-                if year_filter != "全て":
-                    df_filtered = df_filtered[df_filtered['trade_date'].dt.year == year_filter]
-                df_filtered = df_filtered.sort_values('trade_date', ascending=False)
-                display_cols = ['trade_date','market','ticker_code','stock_name','trade_action','quantity','price','total_amount']
-                st.dataframe(df_filtered[display_cols].rename(columns={
-                    'trade_date':'約定日','market':'市場','ticker_code':'コード','stock_name':'銘柄名',
-                    'trade_action':'売買','quantity':'数量','price':'単価','total_amount':'金額'
-                }).reset_index(drop=True), use_container_width=True, height=400)
-            else:
-                st.info("データがありません。CSVファイルをインポートしてください。")
-
-        # ==================== タブ2: 🔔 催促（v5新設計） ====================
-        with tab2:
-            # データ読み込み
-            df_all_t2       = load_all_trades(sheets_client, spreadsheet_id)
-            df_positions_t2 = calculate_position_summary(df_all_t2)
-            manual_pos_t2   = read_sheet(sheets_client, spreadsheet_id, 'manual_positions')
-            df_positions_t2 = apply_manual_positions(df_positions_t2, manual_pos_t2)
-            df_tr_t2        = load_trade_reasons(sheets_client, spreadsheet_id)
-            df_defs         = get_reason_definitions(sheets_client, spreadsheet_id)
-            sl_items        = get_stoploss_items(df_defs)
-
-            # --- サマリーカード ---
-            active_tr  = df_tr_t2[df_tr_t2['status'].astype(str) == 'active'] if len(df_tr_t2) > 0 else pd.DataFrame()
-            filled_cnt = len(active_tr[active_tr['entry_reason_large'].astype(str).str.strip() != '']) if len(active_tr) > 0 else 0
-            total_pos  = len(df_positions_t2)
-            pending_entry_cnt = total_pos - filled_cnt
-
-            # 決済理由未入力数
-            closed_tr  = df_tr_t2[df_tr_t2['status'].astype(str) == 'closed'] if len(df_tr_t2) > 0 else pd.DataFrame()
-            exit_pending_cnt = len(closed_tr[closed_tr['exit_reason_large'].astype(str).str.strip() == '']) if len(closed_tr) > 0 else 0
-
-            # 株価キャッシュ
-            col_price_btn, col_price_info = st.columns([1, 3])
-            with col_price_btn:
-                fetch_prices = st.button("📡 株価更新", use_container_width=True, key="t2_fetch")
-            with col_price_info:
-                cache_time = st.session_state.get('price_cache_time')
-                if not YFINANCE_AVAILABLE:
-                    st.caption("⚠️ yfinanceが未インストール（株価は非表示）")
-                else:
-                    st.caption(f"株価は15分遅延　{'取得時刻: ' + cache_time if cache_time else ''}")
-
-            if fetch_prices and YFINANCE_AVAILABLE and len(df_positions_t2) > 0:
-                with st.spinner('株価取得中...'):
-                    cache = {}
-                    for _, pos_row in df_positions_t2.iterrows():
-                        key = pos_row['ticker_code']
-                        if key not in cache:
-                            cache[key] = get_current_price(pos_row['ticker_code'], pos_row['market'])
-                    st.session_state['price_cache'] = cache
-                    st.session_state['price_cache_time'] = datetime.now().strftime('%H:%M')
-                st.rerun()
-
-            price_cache = st.session_state.get('price_cache', {})
-
-            # 含み損益合計
-            total_pl = 0.0
-            total_cost_sum = 0.0
-            for _, pos in df_positions_t2.iterrows():
-                cp  = price_cache.get(pos['ticker_code'])
-                avg = float(pos['avg_price'])
-                qty = int(pos['quantity'])
-                if cp and avg > 0:
-                    total_pl += (cp - avg) * qty
-                    total_cost_sum += avg * qty
-            pl_pct_total = (total_pl / total_cost_sum * 100) if total_cost_sum > 0 else 0.0
-
-            # サマリーカード表示
-            pl_cls = "s-val-pos" if total_pl >= 0 else "s-val-neg"
-            pl_sign = "+" if total_pl >= 0 else ""
-            st.markdown(f"""
-<div class="summary-grid">
-  <div class="summary-card hl">
-    <div class="s-val {pl_cls}">{pl_sign}{pl_pct_total:.1f}%</div>
-    <div class="s-lbl">含み損益</div>
-  </div>
-  <div class="summary-card">
-    <div class="s-val">{total_pos}</div>
-    <div class="s-lbl">保有銘柄</div>
-  </div>
-  <div class="summary-card">
-    <div class="s-val s-val-yellow">{pending_entry_cnt}</div>
-    <div class="s-lbl">未入力</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-            # 決済理由未入力バッジ
-            if exit_pending_cnt > 0:
-                st.markdown(f"""
-<div class="notif-bar">
-  <span class="notif-text">⚠️ 決済理由が未入力の取引</span>
-  <span class="notif-count">{exit_pending_cnt}件</span>
-</div>
-""", unsafe_allow_html=True)
-                if st.button("決済理由を入力する", key="show_exit_form", use_container_width=False):
-                    st.session_state['show_exit_list'] = not st.session_state.get('show_exit_list', False)
-
-                if st.session_state.get('show_exit_list', False) and len(closed_tr) > 0:
-                    pending_closed = closed_tr[closed_tr['exit_reason_large'].astype(str).str.strip() == '']
-                    for _, crow in pending_closed.iterrows():
-                        ep = float(crow['entry_price']) if crow['entry_price'] else 0.0
-                        xp = float(crow['exit_price']) if crow['exit_price'] else 0.0
-                        pl_disp = float(crow['profit_loss']) if crow['profit_loss'] else (xp - ep) * float(crow['quantity'] if crow['quantity'] else 0)
-                        pl_col = "color:#3d9960" if pl_disp >= 0 else "color:#c0392b"
-                        st.markdown(f"""
-<div class="entered-card" style="border-left-color:#d4a017;">
-  <div class="entered-ticker">{crow['ticker_code']} {crow['stock_name']}</div>
-  <div class="entered-sub">決済日: {str(crow['exit_date'])[:10]}　損益: <span style="{pl_col}">¥{pl_disp:,.0f}</span></div>
-</div>""", unsafe_allow_html=True)
-                        with st.form(key=f"exit_form_{crow['id']}_{crow['ticker_code']}"):
-                            st.markdown('<div class="form-title">✏ 決済理由を入力</div>', unsafe_allow_html=True)
-                            xl_items = get_large(df_defs, 'exit')
-                            x_large  = st.selectbox("大項目", xl_items if xl_items else [""], key=f"ex_xl_{crow['id']}")
-                            xm_items = get_medium(df_defs, 'exit', x_large)
-                            x_medium = st.selectbox("中項目", xm_items if xm_items else ["（なし）"], key=f"ex_xm_{crow['id']}")
-                            xs_items = get_small(df_defs, 'exit', x_medium)
-                            x_small  = st.selectbox("小項目", xs_items if xs_items else ["（なし）"], key=f"ex_xs_{crow['id']}")
-                            ex_memo  = st.text_input("決済メモ（任意）", key=f"ex_memo_{crow['id']}")
-                            submitted = st.form_submit_button("💾 保存", use_container_width=True)
-                            if submitted:
-                                record = dict(crow)
-                                record['exit_reason_large']  = x_large
-                                record['exit_reason_medium'] = x_medium if x_medium != "（なし）" else ""
-                                record['exit_reason_small']  = x_small if x_small != "（なし）" else ""
-                                record['exit_memo'] = ex_memo
-                                upsert_trade_reason(sheets_client, spreadsheet_id, record)
-                                st.success("✅ 保存しました")
-                                st.rerun()
-
-            st.divider()
-
-            # --- ① 保有中ポジション一覧テーブル ---
-            st.markdown('<div class="section-label">保有中ポジション</div>', unsafe_allow_html=True)
-
-            if total_pos == 0:
-                st.info("保有ポジションはありません")
-            else:
-                # 入力済みキーセット
-                filled_keys = set()
-                if len(active_tr) > 0:
-                    for _, rrow in active_tr.iterrows():
-                        if str(rrow.get('entry_reason_large', '')).strip():
-                            filled_keys.add(f"{rrow['ticker_code']}_{rrow['trade_type']}")
-
-                # テーブルヘッダー
-                st.markdown("""
-<div class="pos-table-header">
-  <span>銘柄</span>
-  <span style="text-align:right">数量</span>
-  <span style="text-align:right">損益</span>
-  <span style="text-align:right">状況</span>
-</div>""", unsafe_allow_html=True)
-
-                selected_key = st.session_state.get('selected_pos_key', None)
-
-                for _, pos in df_positions_t2.iterrows():
-                    key = f"{pos['ticker_code']}_{pos['trade_type']}"
-                    cp  = price_cache.get(pos['ticker_code'])
-                    avg = float(pos['avg_price'])
-                    qty = int(pos['quantity'])
-                    is_filled = key in filled_keys
-                    is_jp     = pos['market'] == '日本株'
-
-                    if cp and avg > 0:
-                        pl_pct = (cp - avg) / avg * 100
-                        pl_str = f"{pl_pct:+.1f}%"
-                        pl_cls = "pnl-pos" if pl_pct >= 0 else "pnl-neg"
-                    else:
-                        pl_str = "—"
-                        pl_cls = "num-cell"
-
-                    badge = '<span class="badge-done">入力済</span>' if is_filled else '<span class="badge-pending">未入力</span>'
-                    bar_cls = "left-bar-green" if is_filled else "left-bar-yellow"
-                    sel_cls = "selected" if selected_key == key else ""
-
-                    st.markdown(f"""
-<div class="pos-row {sel_cls} {bar_cls}">
-  <div>
-    <div class="ticker-name">{pos['ticker_code']}</div>
-    <div class="stock-sub">{pos['stock_name']}{'（信用）' if pos['trade_type']=='margin' else ''}</div>
-  </div>
-  <div class="num-cell">{qty}</div>
-  <div class="{pl_cls}">{pl_str}</div>
-  <div style="text-align:right">{badge}</div>
-</div>""", unsafe_allow_html=True)
-
-                    # 行ごとの選択ボタン（非表示感にする）
-                    if st.button(f"{'▼ 入力中' if selected_key == key else '✏ 入力'}", key=f"sel_{key}", use_container_width=True):
-                        if selected_key == key:
-                            st.session_state['selected_pos_key'] = None
-                        else:
-                            st.session_state['selected_pos_key'] = key
-                        st.rerun()
-
-                    # ② インラインフォーム（選択行の直下に展開）
-                    if selected_key == key:
-                        existing_rec = pd.DataFrame()
-                        if len(active_tr) > 0:
-                            mask_ex = (
-                                (active_tr['ticker_code'].astype(str) == str(pos['ticker_code'])) &
-                                (active_tr['trade_type'].astype(str) == str(pos['trade_type']))
-                            )
-                            if mask_ex.any():
-                                existing_rec = active_tr[mask_ex].iloc[0]
-
-                        # 既存値のデフォルト
-                        def_large  = str(existing_rec.get('entry_reason_large', ''))  if len(existing_rec) > 0 else ''
-                        def_medium = str(existing_rec.get('entry_reason_medium', '')) if len(existing_rec) > 0 else ''
-                        def_small  = str(existing_rec.get('entry_reason_small', ''))  if len(existing_rec) > 0 else ''
-                        def_memo   = str(existing_rec.get('entry_memo', ''))          if len(existing_rec) > 0 else ''
-                        def_sl_type= str(existing_rec.get('stop_loss_type', ''))      if len(existing_rec) > 0 else ''
-                        def_sl_p   = float(existing_rec['stop_loss_price']) if len(existing_rec) > 0 and existing_rec.get('stop_loss_price') and str(existing_rec.get('stop_loss_price','')) not in ('','nan') else 0.0
-
-                        st.markdown(f'<div class="form-panel"><div class="form-title">✏ {pos["ticker_code"]} {pos["stock_name"]} — エントリー記録</div></div>', unsafe_allow_html=True)
-
-                        with st.form(key=f"entry_form_{key}"):
-                            large_items = get_large(df_defs, 'entry')
-                            def_large_idx = large_items.index(def_large) if def_large in large_items else 0
-                            large_sel = st.selectbox("エントリー理由（大）", large_items if large_items else [""], index=def_large_idx, key=f"f_large_{key}")
-                            col_m, col_s = st.columns(2)
-                            with col_m:
-                                medium_items = get_medium(df_defs, 'entry', large_sel)
-                                def_medium_idx = medium_items.index(def_medium) if def_medium in medium_items else 0
-                                medium_sel = st.selectbox("理由（中）", medium_items if medium_items else ["（なし）"], index=def_medium_idx, key=f"f_med_{key}")
-                            with col_s:
-                                small_items = get_small(df_defs, 'entry', medium_sel) if medium_sel and medium_sel != "（なし）" else []
-                                def_small_idx = small_items.index(def_small) if def_small in small_items else 0
-                                small_sel = st.selectbox("理由（小）", small_items if small_items else ["（なし）"], index=def_small_idx, key=f"f_sml_{key}")
-                            col_sl1, col_sl2 = st.columns(2)
-                            with col_sl1:
-                                sl_opts = ["（選択）"] + sl_items
-                                def_sl_idx = sl_opts.index(def_sl_type) if def_sl_type in sl_opts else 0
-                                sl_type = st.selectbox("損切り根拠", sl_opts, index=def_sl_idx, key=f"f_sltype_{key}")
-                            with col_sl2:
-                                sl_price = st.number_input("損切り価格", min_value=0.0, value=def_sl_p, step=1.0, format="%.1f", key=f"f_slp_{key}")
-                            entry_memo = st.text_input("メモ（任意）", value=def_memo, key=f"f_memo_{key}")
-
-                            col_save, col_cancel = st.columns(2)
-                            with col_save:
-                                submitted = st.form_submit_button("💾 保存する", use_container_width=True)
-                            with col_cancel:
-                                cancelled = st.form_submit_button("キャンセル", use_container_width=True)
-
-                            if submitted:
-                                if sl_price <= 0:
-                                    st.error("損切り価格を入力してください")
-                                else:
-                                    # entry_date と entry_price を trades から取得
-                                    entry_date_val = ''
-                                    entry_price_val = avg
-                                    if len(df_all_t2) > 0:
-                                        buy_acts = ['買建'] if pos['trade_type'] == 'margin' else ['買付', '入庫']
-                                        t_rows = df_all_t2[
-                                            (df_all_t2['ticker_code'].astype(str) == str(pos['ticker_code'])) &
-                                            (df_all_t2['trade_action'].isin(buy_acts))
-                                        ].sort_values('trade_date')
-                                        if len(t_rows) > 0:
-                                            entry_date_val = str(t_rows.iloc[0]['trade_date'])[:10]
-
-                                    record = {
-                                        'ticker_code': str(pos['ticker_code']),
-                                        'stock_name': str(pos['stock_name']),
-                                        'trade_type': str(pos['trade_type']),
-                                        'entry_date': entry_date_val,
-                                        'entry_price': str(avg),
-                                        'quantity': str(qty),
-                                        'entry_reason_large': large_sel,
-                                        'entry_reason_medium': medium_sel if medium_sel != "（なし）" else "",
-                                        'entry_reason_small': small_sel if small_sel != "（なし）" else "",
-                                        'entry_memo': entry_memo,
-                                        'stop_loss_type': sl_type if sl_type != "（選択）" else "",
-                                        'stop_loss_price': str(sl_price),
-                                        'status': 'active',
-                                    }
-                                    upsert_trade_reason(sheets_client, spreadsheet_id, record)
-                                    st.session_state['selected_pos_key'] = None
-                                    st.success("✅ 保存しました")
-                                    st.rerun()
-
-                            if cancelled:
-                                st.session_state['selected_pos_key'] = None
-                                st.rerun()
-
-                st.divider()
-
-                # ③ 入力済みポジション詳細セクション
-                filled_records = active_tr[active_tr['entry_reason_large'].astype(str).str.strip() != ''] if len(active_tr) > 0 else pd.DataFrame()
-                if len(filled_records) > 0:
-                    st.markdown('<div class="section-label">入力済みポジション詳細</div>', unsafe_allow_html=True)
-                    for _, rec in filled_records.iterrows():
-                        tt_label = "信用" if str(rec['trade_type']) == 'margin' else "現物"
-                        sl_p = str(rec.get('stop_loss_price',''))
-                        sl_disp = f"¥{float(sl_p):,.0f}" if sl_p and sl_p not in ('','nan') else "—"
-                        st.markdown(f"""
-<div class="entered-card">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-      <div class="entered-ticker">{rec['ticker_code']} {rec['stock_name']}</div>
-      <div class="entered-sub">{tt_label} / {rec['quantity']}株 / 取得 ¥{float(rec['entry_price']):,.0f}</div>
-    </div>
-    <span class="badge-done">入力済</span>
-  </div>
-  <div class="detail-grid">
-    <div><div class="d-label">理由（大）</div><div class="d-val">{rec.get('entry_reason_large','—')}</div></div>
-    <div><div class="d-label">理由（中）</div><div class="d-val">{rec.get('entry_reason_medium','—') or '—'}</div></div>
-    <div><div class="d-label">理由（小）</div><div class="d-val">{rec.get('entry_reason_small','—') or '—'}</div></div>
-    <div><div class="d-label">損切り価格</div><div class="d-val d-val-green">{sl_disp}</div></div>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-        # ==================== タブ3: 分析（trade_reasons 単一参照） ====================
-        with tab3:
-            st.subheader("📊 トレード分析")
-            df_tr_analysis = load_trade_reasons(sheets_client, spreadsheet_id)
-
-            closed_analysis = df_tr_analysis[df_tr_analysis['status'].astype(str) == 'closed'].copy() if len(df_tr_analysis) > 0 else pd.DataFrame()
-
-            if len(closed_analysis) > 0:
-                for col in ['entry_price', 'exit_price', 'profit_loss', 'profit_loss_pct', 'quantity']:
-                    closed_analysis[col] = pd.to_numeric(closed_analysis[col], errors='coerce')
-                closed_analysis['entry_date'] = pd.to_datetime(closed_analysis['entry_date'], errors='coerce')
-                closed_analysis['exit_date']  = pd.to_datetime(closed_analysis['exit_date'],  errors='coerce')
-                closed_analysis['hold_days']  = (closed_analysis['exit_date'] - closed_analysis['entry_date']).dt.days
-
-                # --- パフォーマンスサマリー ---
-                st.markdown('<div class="section-label">パフォーマンス</div>', unsafe_allow_html=True)
-                total_trades   = len(closed_analysis)
-                winning_trades = len(closed_analysis[closed_analysis['profit_loss'] > 0])
-                losing_trades  = len(closed_analysis[closed_analysis['profit_loss'] < 0])
-                win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-                total_pl_sum   = closed_analysis['profit_loss'].sum()
-                avg_win  = closed_analysis[closed_analysis['profit_loss'] > 0]['profit_loss'].mean() if winning_trades > 0 else 0
-                avg_loss = abs(closed_analysis[closed_analysis['profit_loss'] < 0]['profit_loss'].mean()) if losing_trades > 0 else 1
-                pf       = avg_win / avg_loss if avg_loss > 0 else 0
-
-                # 統計カードをグリッドで表示
-                pl_cls2 = "s-val-pos" if total_pl_sum >= 0 else "s-val-neg"
-                st.markdown(f"""
-<div class="summary-grid" style="grid-template-columns:1fr 1fr 1fr;">
-  <div class="summary-card hl">
-    <div class="s-val {pl_cls2}">¥{total_pl_sum:,.0f}</div>
-    <div class="s-lbl">累積損益</div>
-  </div>
-  <div class="summary-card">
-    <div class="s-val">{win_rate:.1f}%</div>
-    <div class="s-lbl">勝率</div>
-  </div>
-  <div class="summary-card">
-    <div class="s-val">{pf:.2f}</div>
-    <div class="s-lbl">PF</div>
-  </div>
-</div>
-<div class="summary-grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:0;">
-  <div class="summary-card">
-    <div class="s-val">{total_trades}</div>
-    <div class="s-lbl">総トレード数</div>
-  </div>
-  <div class="summary-card">
-    <div class="s-val s-val-pos">¥{closed_analysis['profit_loss'].max():,.0f}</div>
-    <div class="s-lbl">最大利益</div>
-  </div>
-  <div class="summary-card">
-    <div class="s-val s-val-neg">¥{closed_analysis['profit_loss'].min():,.0f}</div>
-    <div class="s-lbl">最大損失</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-                st.divider()
-
-                # 累積損益グラフ
-                col1, col2 = st.columns(2)
-                with col1:
-                    df_cs = closed_analysis.sort_values('exit_date')
-                    df_cs['cumulative_pl'] = df_cs['profit_loss'].cumsum()
-                    fig = px.line(df_cs, x='exit_date', y='cumulative_pl',
-                                  title='累積損益推移',
-                                  labels={'exit_date': '決済日', 'cumulative_pl': '累積損益（円）'},
-                                  color_discrete_sequence=['#3d9960'])
-                    fig.update_layout(height=280, paper_bgcolor='#1c1c1c', plot_bgcolor='#1c1c1c',
-                                     font_color='#f7f7f5', title_font_size=12)
-                    fig.update_xaxes(gridcolor='#2a2a2a')
-                    fig.update_yaxes(gridcolor='#2a2a2a')
-                    st.plotly_chart(fig, use_container_width=True)
-                with col2:
-                    wl_data = pd.DataFrame({'結果': ['勝ち', '負け'], '件数': [winning_trades, losing_trades]})
-                    fig = px.pie(wl_data, values='件数', names='結果', title='勝敗分布',
-                                 color='結果',
-                                 color_discrete_map={'勝ち': '#3d9960', '負け': '#c0392b'})
-                    fig.update_layout(height=280, paper_bgcolor='#1c1c1c', font_color='#f7f7f5', title_font_size=12)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                st.divider()
-
-                # エントリー理由別分析
-                st.markdown('<div class="section-label">エントリー理由別 勝率</div>', unsafe_allow_html=True)
-                valid_reason = closed_analysis[closed_analysis['entry_reason_large'].astype(str).str.strip() != ''].copy()
-                if len(valid_reason) > 0:
-                    valid_reason['reason_full'] = valid_reason.apply(
-                        lambda r: format_reason(
-                            str(r.get('entry_reason_large', '')),
-                            str(r.get('entry_reason_medium', '')),
-                            str(r.get('entry_reason_small', ''))
-                        ), axis=1)
-                    rstats = valid_reason.groupby('reason_full').agg(
-                        トレード数=('profit_loss', 'count'),
-                        勝率=('profit_loss', lambda x: round((x > 0).mean() * 100, 1)),
-                        平均損益=('profit_loss', lambda x: round(x.mean(), 0)),
-                        合計損益=('profit_loss', lambda x: round(x.sum(), 0))
-                    ).sort_values('合計損益', ascending=False)
-                    st.dataframe(rstats, use_container_width=True)
-
-                st.divider()
-
-                # 銘柄別分析
-                st.markdown('<div class="section-label">銘柄別分析</div>', unsafe_allow_html=True)
-                ts = closed_analysis.groupby('ticker_code').agg(
-                    {'profit_loss': ['sum', 'mean', 'count'], 'profit_loss_pct': 'mean'}
-                ).round(2)
-                ts.columns = ['総損益', '平均損益', 'トレード数', '平均利益率%']
-                st.dataframe(ts.sort_values('総損益', ascending=False), use_container_width=True)
-
-                st.divider()
-
-                # トレード履歴
-                st.markdown('<div class="section-label">トレード履歴</div>', unsafe_allow_html=True)
-                col1, col2 = st.columns(2)
-                with col1:
-                    date_from = st.date_input("開始日", value=closed_analysis['exit_date'].min())
-                with col2:
-                    date_to = st.date_input("終了日", value=closed_analysis['exit_date'].max())
-                df_fc = closed_analysis[
-                    (closed_analysis['exit_date'] >= pd.Timestamp(date_from)) &
-                    (closed_analysis['exit_date'] <= pd.Timestamp(date_to))
-                ]
-                dcols = ['exit_date', 'ticker_code', 'stock_name', 'entry_price', 'exit_price',
-                         'quantity', 'profit_loss', 'profit_loss_pct',
-                         'entry_reason_large', 'exit_reason_large']
-                dcols_exist = [c for c in dcols if c in df_fc.columns]
-                st.dataframe(df_fc[dcols_exist].rename(columns={
-                    'exit_date': '決済日', 'ticker_code': 'コード', 'stock_name': '銘柄名',
-                    'entry_price': 'IN価格', 'exit_price': 'OUT価格', 'quantity': '数量',
-                    'profit_loss': '損益', 'profit_loss_pct': '損益率%',
-                    'entry_reason_large': 'IN根拠(大)', 'exit_reason_large': 'OUT根拠(大)'
-                }), use_container_width=True, height=400)
-
-                # 月別損益
-                st.divider()
-                st.markdown('<div class="section-label">月別損益</div>', unsafe_allow_html=True)
-                if len(closed_analysis) > 0:
-                    monthly = closed_analysis.copy()
-                    monthly['month'] = monthly['exit_date'].dt.to_period('M').astype(str)
-                    monthly_stats = monthly.groupby('month').agg(
-                        損益合計=('profit_loss', 'sum'),
-                        トレード数=('profit_loss', 'count')
-                    ).reset_index()
-                    monthly_stats['色'] = monthly_stats['損益合計'].apply(lambda x: '#3d9960' if x >= 0 else '#c0392b')
-                    fig = go.Figure(go.Bar(
-                        x=monthly_stats['month'],
-                        y=monthly_stats['損益合計'],
-                        marker_color=monthly_stats['色'],
-                        text=monthly_stats['損益合計'].apply(lambda x: f"¥{x:,.0f}"),
-                        textposition='outside'
-                    ))
-                    fig.update_layout(
-                        height=280, title='月別損益（円）', title_font_size=12,
-                        paper_bgcolor='#1c1c1c', plot_bgcolor='#1c1c1c',
-                        font_color='#f7f7f5'
-                    )
-                    fig.update_xaxes(gridcolor='#2a2a2a')
-                    fig.update_yaxes(gridcolor='#2a2a2a', zeroline=True, zerolinecolor='#444')
-                    st.plotly_chart(fig, use_container_width=True)
-
-            else:
-                st.info("決済済みトレードがありません。ポジションを決済して決済理由を入力すると分析が表示されます。")
-
-        # ==================== タブ4: 資金管理 ====================
-        with tab4:
-            st.subheader("💰 資金管理")
-            settings = load_settings(sheets_client, spreadsheet_id)
-
-            st.markdown('<div class="section-label">総資産設定</div>', unsafe_allow_html=True)
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                total_capital = st.number_input("現在の総資産（円）", min_value=0.0,
-                                                value=float(settings['total_capital']), step=10000.0, format="%.0f")
-            with col2:
-                st.metric("総資産", f"¥{total_capital:,.0f}")
-
-            st.markdown('<div class="section-label">リスク設定</div>', unsafe_allow_html=True)
-            risk_pct = st.slider("1トレードの許容リスク（%）", min_value=0.1, max_value=5.0,
-                                 value=float(settings['risk_per_trade_pct']), step=0.1, format="%.1f%%")
-            risk_amount = total_capital * (risk_pct / 100)
-            st.metric("1トレードの許容損失額", f"¥{risk_amount:,.0f}")
-
-            if st.button("💾 設定を保存", use_container_width=True, type="primary"):
-                ok = save_settings(sheets_client, spreadsheet_id, total_capital, risk_pct)
-                if ok:
-                    st.success(f"✅ 保存しました（総資産: ¥{total_capital:,.0f} / リスク: {risk_pct:.1f}%）")
-                    st.rerun()
-
-            st.divider()
-            st.markdown('<div class="section-label">適正株数計算機</div>', unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                calc_current_price = st.number_input("現在価格（円）", min_value=0.0, step=0.01, format="%.2f")
-            with col2:
-                calc_stop_loss = st.number_input("損切り価格（円）", min_value=0.0, step=0.01, format="%.2f")
-
-            if calc_current_price > 0 and calc_stop_loss > 0 and calc_current_price > calc_stop_loss:
-                loss_per_share   = calc_current_price - calc_stop_loss
-                max_shares       = int(risk_amount / loss_per_share)
-                total_investment = calc_current_price * max_shares
-                st.success(f"### 🎯 エントリー可能株数: **{max_shares}株**")
-                col1, col2, col3 = st.columns(3)
-                with col1: st.metric("投資額", f"¥{total_investment:,.0f}")
-                with col2: st.metric("1株あたり損失", f"¥{loss_per_share:,.2f}")
-                with col3: st.metric("最大損失額", f"¥{risk_amount:,.0f}")
-                st.info(f"損切り幅: {(loss_per_share/calc_current_price*100):.2f}% | 資産比率: {(total_investment/total_capital*100):.2f}%")
-            elif calc_current_price > 0 and calc_stop_loss >= calc_current_price:
-                st.warning("⚠️ 損切り価格は現在価格より低く設定してください")
-
-        # ==================== タブ5: 保有ポジション（詳細・編集） ====================
-        with tab5:
-            st.subheader("📦 保有ポジション（詳細・編集）")
-            df_all_t6 = load_all_trades(sheets_client, spreadsheet_id)
-
-            if len(df_all_t6) > 0:
-                with st.expander("🔍 デバッグ：銘柄別の取引生データ確認"):
-                    debug_ticker = st.selectbox("確認する銘柄コード",
-                                                sorted(df_all_t6["ticker_code"].unique().tolist()),
-                                                key="debug_ticker")
-                    debug_r = df_all_t6[df_all_t6["ticker_code"] == debug_ticker].sort_values("trade_date")
-                    st.dataframe(debug_r[["trade_date","market","account_type","trade_type","trade_action","quantity","price"]],
-                                 use_container_width=True, height=300)
-
-            df_positions_t6 = calculate_position_summary(df_all_t6)
-            manual_pos_df_t6 = read_sheet(sheets_client, spreadsheet_id, 'manual_positions')
-            if len(df_positions_t6) > 0 and len(manual_pos_df_t6) > 0:
-                manual_pos_df_t6['quantity']  = pd.to_numeric(manual_pos_df_t6['quantity'], errors='coerce').fillna(0)
-                manual_pos_df_t6['avg_price'] = pd.to_numeric(manual_pos_df_t6['avg_price'], errors='coerce').fillna(0)
-                for _, mrow in manual_pos_df_t6.iterrows():
-                    mask = ((df_positions_t6['ticker_code'] == mrow['ticker_code']) &
-                            (df_positions_t6['trade_type'] == mrow['trade_type']))
-                    if mask.any():
-                        if float(mrow['quantity']) <= 0:
-                            df_positions_t6 = df_positions_t6[~mask]
-                        else:
-                            df_positions_t6.loc[mask, 'quantity']   = int(mrow['quantity'])
-                            df_positions_t6.loc[mask, 'avg_price']  = float(mrow['avg_price'])
-                            df_positions_t6.loc[mask, 'total_cost'] = round(float(mrow['avg_price']) * float(mrow['quantity']), 0)
-                df_positions_t6 = df_positions_t6.sort_values('ticker_code').reset_index(drop=True)
-
-            if len(df_positions_t6) > 0:
-                spot_jp_t6   = df_positions_t6[(df_positions_t6['market'] == '日本株') & (df_positions_t6['trade_type'] == 'spot')].copy()
-                margin_jp_t6 = df_positions_t6[(df_positions_t6['market'] == '日本株') & (df_positions_t6['trade_type'] == 'margin')].copy()
-                us_stocks_t6 = df_positions_t6[df_positions_t6['market'] == '米国株'].copy()
-                st.caption(f"保有銘柄数: {len(df_positions_t6)}件　（現物 {len(spot_jp_t6)} ／ 信用 {len(margin_jp_t6)} ／ 米国株 {len(us_stocks_t6)}）　💡 数量を0にすると削除")
-
-                pos_tab1, pos_tab2, pos_tab3 = st.tabs([
-                    f"🇯🇵 現物 {len(spot_jp_t6)}",
-                    f"📊 信用 {len(margin_jp_t6)}",
-                    f"🇺🇸 米国 {len(us_stocks_t6)}"
-                ])
-
-                def render_editable_positions(sub_df, tab_key):
-                    if len(sub_df) == 0:
-                        st.info("このカテゴリの保有はありません")
-                        return
-                    display_df = sub_df[['ticker_code','stock_name','quantity','avg_price','total_cost']].rename(columns={
-                        'ticker_code':'コード','stock_name':'銘柄名','quantity':'数量',
-                        'avg_price':'平均単価','total_cost':'総額'
-                    }).reset_index(drop=True)
-                    edited = st.data_editor(display_df, use_container_width=True, num_rows="dynamic",
-                        column_config={
-                            "コード":   st.column_config.TextColumn("コード", width="small"),
-                            "銘柄名":   st.column_config.TextColumn("銘柄名"),
-                            "数量":     st.column_config.NumberColumn("数量", min_value=0, step=1, width="small"),
-                            "平均単価": st.column_config.NumberColumn("平均単価", min_value=0, format="%.2f"),
-                            "総額":     st.column_config.NumberColumn("総額", disabled=True),
-                        }, key=f"editor_{tab_key}")
-                    st.session_state[f"edited_{tab_key}"] = edited
-
-                with pos_tab1: render_editable_positions(spot_jp_t6, "spot_jp")
-                with pos_tab2: render_editable_positions(margin_jp_t6, "margin_jp")
-                with pos_tab3: render_editable_positions(us_stocks_t6, "us_stocks")
-
-                st.divider()
-                if st.button("💾 変更を保存", use_container_width=True, type="primary"):
-                    save_rows = []
-                    for tab_key, trade_type_default, orig_df in [
-                        ("spot_jp",   "spot",   spot_jp_t6),
-                        ("margin_jp", "margin", margin_jp_t6),
-                        ("us_stocks", "spot",   us_stocks_t6)
-                    ]:
-                        edited_df = st.session_state.get(f"edited_{tab_key}")
-                        if edited_df is None:
-                            continue
-                        for _, erow in edited_df.iterrows():
-                            code = str(erow.get("コード", "")).strip()
-                            if not code:
-                                continue
-                            orig_match    = orig_df[orig_df['ticker_code'] == code]
-                            market_val    = orig_match.iloc[0]['market']     if len(orig_match) > 0 else '日本株'
-                            tradetype_val = orig_match.iloc[0]['trade_type'] if len(orig_match) > 0 else trade_type_default
-                            save_rows.append({
-                                'ticker_code': code,
-                                'stock_name':  str(erow.get("銘柄名", code)),
-                                'market':      market_val,
-                                'trade_type':  tradetype_val,
-                                'quantity':    float(erow.get("数量", 0)),
-                                'avg_price':   float(erow.get("平均単価", 0)),
-                                'updated_at':  datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            })
-                    if save_rows:
-                        if write_sheet(sheets_client, spreadsheet_id, 'manual_positions', pd.DataFrame(save_rows)):
-                            st.success("✅ 保存しました")
-                            st.rerun()
-                    else:
-                        st.warning("保存するデータがありません")
-            else:
-                st.info("現在保有中のポジションはありません")
-
-            # 決済入力（ポジションタブに移動）
-            st.divider()
-            st.markdown('<div class="section-label">決済記録</div>', unsafe_allow_html=True)
-            st.caption("保有中ポジションの決済を記録します")
-            df_tr_t5 = load_trade_reasons(sheets_client, spreadsheet_id)
-            active_for_close = df_tr_t5[df_tr_t5['status'].astype(str) == 'active'] if len(df_tr_t5) > 0 else pd.DataFrame()
-
-            if len(active_for_close) > 0:
-                close_opts = [f"{r['ticker_code']} {r['stock_name']} ({r['trade_type']})"
-                              for _, r in active_for_close.iterrows()]
-                close_sel = st.selectbox("決済するポジションを選択", close_opts, key="close_sel")
-                close_idx = close_opts.index(close_sel)
-                close_row = active_for_close.iloc[close_idx]
-
-                df_defs_close = get_reason_definitions(sheets_client, spreadsheet_id)
-                ep = float(close_row['entry_price']) if close_row.get('entry_price') and str(close_row.get('entry_price', '')) not in ('', 'nan') else 0.0
-                qty_close = int(float(close_row['quantity'])) if close_row.get('quantity') and str(close_row.get('quantity', '')) not in ('', 'nan') else 0
-
-                with st.form("close_form_t5"):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        exit_date  = st.date_input("決済日", value=datetime.now())
-                        exit_price = st.number_input("決済価格", min_value=0.0, step=1.0, value=ep, format="%.1f")
-                    with col2:
-                        pl_preview = (exit_price - ep) * qty_close if ep > 0 and exit_price > 0 else 0
-                        pl_pct_pre = ((exit_price - ep) / ep * 100) if ep > 0 and exit_price > 0 else 0
-                        pl_col = "#3d9960" if pl_preview >= 0 else "#c0392b"
-                        st.markdown(f"""
-<div style="text-align:center;padding:16px;background:var(--gray-dark);border-radius:8px;margin-top:8px;">
-  <div style="font-size:10px;color:#888;font-family:'Space Mono',monospace;">損益プレビュー</div>
-  <div style="font-size:20px;font-weight:700;color:{pl_col};">¥{pl_preview:,.0f}</div>
-  <div style="font-size:12px;color:{pl_col};">{pl_pct_pre:+.2f}%</div>
-</div>""", unsafe_allow_html=True)
-
-                    st.markdown("**決済理由**")
-                    xl_items = get_large(df_defs_close, 'exit')
-                    x_large  = st.selectbox("大項目", xl_items if xl_items else [""], key="cl_xl_t5")
-                    xm_items = get_medium(df_defs_close, 'exit', x_large)
-                    x_medium = st.selectbox("中項目", xm_items if xm_items else ["（なし）"], key="cl_xm_t5")
-                    xs_items = get_small(df_defs_close, 'exit', x_medium)
-                    x_small  = st.selectbox("小項目", xs_items if xs_items else ["（なし）"], key="cl_xs_t5")
-                    close_notes = st.text_area("決済メモ", height=60, key="cl_notes_t5")
-
-                    submitted = st.form_submit_button("✅ 決済完了", use_container_width=True)
-                    if submitted and exit_price > 0:
-                        pl_final     = (exit_price - ep) * qty_close
-                        pl_pct_final = ((exit_price - ep) / ep * 100) if ep > 0 else 0
-                        record = dict(close_row)
-                        record['exit_date']          = str(exit_date)
-                        record['exit_price']         = str(exit_price)
-                        record['exit_reason_large']  = x_large
-                        record['exit_reason_medium'] = x_medium if x_medium != "（なし）" else ""
-                        record['exit_reason_small']  = x_small if x_small != "（なし）" else ""
-                        record['exit_memo']          = close_notes
-                        record['profit_loss']        = str(round(pl_final, 0))
-                        record['profit_loss_pct']    = str(round(pl_pct_final, 2))
-                        record['status']             = 'closed'
-                        upsert_trade_reason(sheets_client, spreadsheet_id, record)
-                        color = "🟢" if pl_final >= 0 else "🔴"
-                        st.success(f"{color} 決済完了　損益: ¥{pl_final:,.0f} ({pl_pct_final:+.2f}%)")
-                        st.rerun()
-            else:
-                st.info("決済できるポジションがありません（催促タブでエントリー理由を登録してください）")
-
-        # ==================== タブ6: 設定 ====================
-        with tab6:
-            st.subheader("⚙️ 設定")
-
-            # --- 理由マスタ管理UI（追加・削除） ---
-            st.markdown('<div class="section-label">理由マスタ管理</div>', unsafe_allow_html=True)
-            df_defs_t7     = get_reason_definitions(sheets_client, spreadsheet_id)
-            df_all_defs_t7 = read_sheet(sheets_client, spreadsheet_id, 'reason_definitions')
-
-            reason_type_sel = st.selectbox("対象", ["entry", "exit", "stop_loss"],
-                format_func=lambda x: {"entry": "エントリー理由", "exit": "決済理由", "stop_loss": "損切り根拠"}[x])
-
-            if reason_type_sel == "stop_loss":
-                st.markdown("**損切り根拠一覧**")
-                sl_df = df_defs_t7[df_defs_t7['reason_type'] == 'stop_loss'][['name']].rename(columns={'name': '損切り根拠'})
-                st.dataframe(sl_df.reset_index(drop=True), use_container_width=True)
-
-                col_add, col_del = st.columns(2)
-                with col_add:
-                    with st.expander("➕ 追加"):
-                        new_sl = st.text_input("損切り根拠名", key="new_sl_name")
-                        if st.button("追加", key="add_sl", type="primary"):
-                            if new_sl:
-                                new_row = {'reason_type': 'stop_loss', 'level': 'small',
-                                           'parent': '', 'name': new_sl, 'is_active': '1'}
-                                if len(df_all_defs_t7) == 0:
-                                    write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', pd.DataFrame([new_row]))
-                                else:
-                                    append_to_sheet(sheets_client, spreadsheet_id, 'reason_definitions', new_row)
-                                st.success("✅ 追加しました")
-                                st.rerun()
-                with col_del:
-                    with st.expander("🗑 削除"):
-                        sl_names = df_defs_t7[df_defs_t7['reason_type'] == 'stop_loss']['name'].tolist()
-                        del_sl = st.selectbox("削除する項目", sl_names if sl_names else ["（なし）"], key="del_sl_sel")
-                        if st.button("削除", key="del_sl_btn"):
-                            if del_sl and del_sl != "（なし）":
-                                df_all_defs_t7 = df_all_defs_t7[
-                                    ~((df_all_defs_t7['reason_type'] == 'stop_loss') &
-                                      (df_all_defs_t7['name'] == del_sl))
-                                ]
-                                write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', df_all_defs_t7)
-                                st.success(f"✅ 「{del_sl}」を削除しました")
-                                st.rerun()
-            else:
-                col_l, col_m, col_s = st.columns(3)
-
-                with col_l:
-                    st.markdown("**大項目**")
-                    large_df = df_defs_t7[
-                        (df_defs_t7['reason_type'] == reason_type_sel) & (df_defs_t7['level'] == 'large')
-                    ][['name']].rename(columns={'name': '大項目'})
-                    st.dataframe(large_df.reset_index(drop=True), use_container_width=True)
-                    with st.expander("➕ 追加"):
-                        new_large = st.text_input("大項目名", key=f"new_large_{reason_type_sel}")
-                        if st.button("追加", key=f"add_large_{reason_type_sel}", type="primary"):
-                            if new_large:
-                                new_row = {'reason_type': reason_type_sel, 'level': 'large',
-                                           'parent': '', 'name': new_large, 'is_active': '1'}
-                                if len(df_all_defs_t7) == 0:
-                                    write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', pd.DataFrame([new_row]))
-                                else:
-                                    append_to_sheet(sheets_client, spreadsheet_id, 'reason_definitions', new_row)
-                                st.success("✅ 追加しました")
-                                st.rerun()
-                    with st.expander("🗑 削除"):
-                        large_names = df_defs_t7[
-                            (df_defs_t7['reason_type'] == reason_type_sel) & (df_defs_t7['level'] == 'large')
-                        ]['name'].tolist()
-                        del_large = st.selectbox("削除", large_names if large_names else ["（なし）"], key=f"del_large_{reason_type_sel}")
-                        if st.button("削除", key=f"del_large_btn_{reason_type_sel}"):
-                            if del_large and del_large != "（なし）":
-                                # 大項目とその配下の中・小項目もすべて削除
-                                medium_children = df_all_defs_t7[
-                                    (df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                    (df_all_defs_t7['level'] == 'medium') &
-                                    (df_all_defs_t7['parent'] == del_large)
-                                ]['name'].tolist()
-                                df_all_defs_t7 = df_all_defs_t7[
-                                    ~((df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                      (df_all_defs_t7['level'] == 'large') &
-                                      (df_all_defs_t7['name'] == del_large))
-                                ]
-                                df_all_defs_t7 = df_all_defs_t7[
-                                    ~((df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                      (df_all_defs_t7['level'] == 'medium') &
-                                      (df_all_defs_t7['parent'] == del_large))
-                                ]
-                                for mc in medium_children:
-                                    df_all_defs_t7 = df_all_defs_t7[
-                                        ~((df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                          (df_all_defs_t7['level'] == 'small') &
-                                          (df_all_defs_t7['parent'] == mc))
-                                    ]
-                                write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', df_all_defs_t7)
-                                st.success(f"✅ 「{del_large}」とその配下を削除しました")
-                                st.rerun()
-
-                with col_m:
-                    st.markdown("**中項目**")
-                    large_items_t7   = get_large(df_defs_t7, reason_type_sel)
-                    parent_for_medium = st.selectbox("大項目を選択",
-                        large_items_t7 if large_items_t7 else ["（大項目なし）"],
-                        key=f"par_med_{reason_type_sel}")
-                    medium_df = df_defs_t7[
-                        (df_defs_t7['reason_type'] == reason_type_sel) &
-                        (df_defs_t7['level'] == 'medium') &
-                        (df_defs_t7['parent'] == parent_for_medium)
-                    ][['name']].rename(columns={'name': '中項目'})
-                    st.dataframe(medium_df.reset_index(drop=True), use_container_width=True)
-                    with st.expander("➕ 追加"):
-                        new_medium = st.text_input("中項目名", key=f"new_medium_{reason_type_sel}")
-                        if st.button("追加", key=f"add_medium_{reason_type_sel}", type="primary"):
-                            if new_medium and parent_for_medium and parent_for_medium != "（大項目なし）":
-                                new_row = {'reason_type': reason_type_sel, 'level': 'medium',
-                                           'parent': parent_for_medium, 'name': new_medium, 'is_active': '1'}
-                                if len(df_all_defs_t7) == 0:
-                                    write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', pd.DataFrame([new_row]))
-                                else:
-                                    append_to_sheet(sheets_client, spreadsheet_id, 'reason_definitions', new_row)
-                                st.success("✅ 追加しました")
-                                st.rerun()
-                    with st.expander("🗑 削除"):
-                        medium_names = df_defs_t7[
-                            (df_defs_t7['reason_type'] == reason_type_sel) &
-                            (df_defs_t7['level'] == 'medium') &
-                            (df_defs_t7['parent'] == parent_for_medium)
-                        ]['name'].tolist()
-                        del_medium = st.selectbox("削除", medium_names if medium_names else ["（なし）"], key=f"del_medium_{reason_type_sel}")
-                        if st.button("削除", key=f"del_medium_btn_{reason_type_sel}"):
-                            if del_medium and del_medium != "（なし）":
-                                df_all_defs_t7 = df_all_defs_t7[
-                                    ~((df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                      (df_all_defs_t7['level'] == 'medium') &
-                                      (df_all_defs_t7['name'] == del_medium))
-                                ]
-                                df_all_defs_t7 = df_all_defs_t7[
-                                    ~((df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                      (df_all_defs_t7['level'] == 'small') &
-                                      (df_all_defs_t7['parent'] == del_medium))
-                                ]
-                                write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', df_all_defs_t7)
-                                st.success(f"✅ 「{del_medium}」とその配下を削除しました")
-                                st.rerun()
-
-                with col_s:
-                    st.markdown("**小項目**")
-                    medium_items_t7  = get_medium(df_defs_t7, reason_type_sel, parent_for_medium)
-                    parent_for_small = st.selectbox("中項目を選択",
-                        medium_items_t7 if medium_items_t7 else ["（中項目なし）"],
-                        key=f"par_sml_{reason_type_sel}")
-                    small_df = df_defs_t7[
-                        (df_defs_t7['reason_type'] == reason_type_sel) &
-                        (df_defs_t7['level'] == 'small') &
-                        (df_defs_t7['parent'] == parent_for_small)
-                    ][['name']].rename(columns={'name': '小項目'})
-                    st.dataframe(small_df.reset_index(drop=True), use_container_width=True)
-                    with st.expander("➕ 追加"):
-                        new_small = st.text_input("小項目名", key=f"new_small_{reason_type_sel}")
-                        if st.button("追加", key=f"add_small_{reason_type_sel}", type="primary"):
-                            if new_small and parent_for_small and parent_for_small != "（中項目なし）":
-                                new_row = {'reason_type': reason_type_sel, 'level': 'small',
-                                           'parent': parent_for_small, 'name': new_small, 'is_active': '1'}
-                                if len(df_all_defs_t7) == 0:
-                                    write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', pd.DataFrame([new_row]))
-                                else:
-                                    append_to_sheet(sheets_client, spreadsheet_id, 'reason_definitions', new_row)
-                                st.success("✅ 追加しました")
-                                st.rerun()
-                    with st.expander("🗑 削除"):
-                        small_names = df_defs_t7[
-                            (df_defs_t7['reason_type'] == reason_type_sel) &
-                            (df_defs_t7['level'] == 'small') &
-                            (df_defs_t7['parent'] == parent_for_small)
-                        ]['name'].tolist()
-                        del_small = st.selectbox("削除", small_names if small_names else ["（なし）"], key=f"del_small_{reason_type_sel}")
-                        if st.button("削除", key=f"del_small_btn_{reason_type_sel}"):
-                            if del_small and del_small != "（なし）":
-                                df_all_defs_t7 = df_all_defs_t7[
-                                    ~((df_all_defs_t7['reason_type'] == reason_type_sel) &
-                                      (df_all_defs_t7['level'] == 'small') &
-                                      (df_all_defs_t7['name'] == del_small))
-                                ]
-                                write_sheet(sheets_client, spreadsheet_id, 'reason_definitions', df_all_defs_t7)
-                                st.success(f"✅ 「{del_small}」を削除しました")
-                                st.rerun()
-
-            st.divider()
-
-            # --- データ管理 ---
-            st.markdown('<div class="section-label">データ管理</div>', unsafe_allow_html=True)
-            st.warning("⚠️ v5移行時は以下の手順を実施してください\n1. Googleスプレッドシートから `active_trades` `closed_trades` シートを削除\n2. `trade_reasons` シートを全行削除（ヘッダーは残す）\n3. アプリを再起動して催促タブからポジションを手入力")
-
-            if st.button("🗑 全データをリセット", use_container_width=True):
-                if st.checkbox("本当にリセットしますか？（取消不可）"):
-                    for sheet_name, cols in [
-                        ('trades', ['trade_date','settlement_date','market','ticker_code','stock_name',
-                                    'account_type','trade_type','trade_action','quantity','price',
-                                    'commission','tax','total_amount','exchange_rate','currency','created_at']),
-                        ('trade_reasons', TRADE_REASONS_COLS),
-                    ]:
-                        write_sheet(sheets_client, spreadsheet_id, sheet_name, pd.DataFrame(columns=cols))
-                    st.success("✅ データをリセットしました")
-                    st.rerun()
-
-            st.divider()
-            st.markdown('<div class="section-label">接続情報</div>', unsafe_allow_html=True)
-            st.code(f"Spreadsheet ID: {spreadsheet_id}")
-            st.caption("Railwayの環境変数 SPREADSHEET_ID に設定されているIDです")
-
+def parse_realized_us(df):
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    result = pd.DataFrame({
+        'market': '米国株',
+        'ticker': df['ティッカーコード'].astype(str).str.strip(),
+        'name': df['銘柄名'],
+        'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
+        'build_date': '',
+        'quantity': _clean_num(df['数量[株]']).astype(int),
+        'sell_price': _clean_num(df['売却/決済単価[USドル]']),
+        'avg_cost': _clean_num(df['平均取得価額[円]']),
+        'realized_pl': _clean_num(df['実現損益[円]']),
+    })
+    result['realized_pl_pct'] = np.where(
+        result['avg_cost'] > 0,
+        (result['realized_pl'] / result['avg_cost'] / result['quantity'] * 100).round(2),
+        0.0
+    )
+    result['hold_days'] = ''
+    return result
+
+def parse_history_jp(df):
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    return pd.DataFrame({
+        'market': '日本株',
+        'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
+        'ticker': df['銘柄コード'].astype(str).str.strip().apply(
+            lambda x: str(int(float(x))) if x.replace('.','').isdigit() else x),
+        'name': df['銘柄名'],
+        'trade_type': df['取引区分'],
+        'action': df['売買区分'],
+        'quantity': _clean_num(df['数量［株］']).astype(int),
+        'price': _clean_num(df['単価［円］']),
+        'build_date': pd.to_datetime(df['建約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d') if '建約定日' in df.columns else '',
+    })
+
+def parse_history_us(df):
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    return pd.DataFrame({
+        'market': '米国株',
+        'trade_date': pd.to_datetime(df['約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d'),
+        'ticker': df['ティッカー'].astype(str).str.strip(),
+        'name': df['銘柄名'],
+        'trade_type': df['取引区分'],
+        'action': df['売買区分'],
+        'quantity': _clean_num(df['数量［株］']).astype(int),
+        'price': _clean_num(df['単価［USドル］']),
+        'build_date': '',
+    })
+
+# ==================== ポジション計算 ====================
+def calc_positions(df_hist):
+    """取引履歴から現在ポジションを算出"""
+    if len(df_hist) == 0:
+        return pd.DataFrame()
+    result = []
+    for ticker in df_hist['ticker'].unique():
+        sub = df_hist[df_hist['ticker'] == ticker].sort_values('trade_date')
+        name = sub['name'].iloc[-1]
+        market = sub['market'].iloc[-1]
+
+        # 現物
+        spot = sub[sub['trade_type'].isin(['現物', '現引']) | (sub['market'] == '米国株')]
+        spot_buy  = spot[spot['action'].isin(['買付', '入庫'])]['quantity'].sum()
+        spot_sell = spot[spot['action'] == '売付']['quantity'].sum()
+        spot_qty  = spot_buy - spot_sell
+
+        # 信用
+        margin_buy  = sub[sub['action'] == '買建']['quantity'].sum()
+        margin_sell = sub[sub['action'] == '売埋']['quantity'].sum()
+        kenin       = sub[sub['trade_type'] == '現引']['quantity'].sum()
+        margin_qty  = margin_buy - margin_sell - kenin
+
+        # 平均取得価格（FIFO近似）
+        def avg_price(rows, buy_acts, sell_act):
+            qty, avg = 0.0, 0.0
+            for _, r in rows.sort_values('trade_date').iterrows():
+                q = float(r['quantity']); p = float(r['price'])
+                if r['action'] in buy_acts:
+                    avg = (avg * qty + p * q) / (qty + q) if (qty + q) > 0 else 0
+                    qty += q
+                elif r['action'] == sell_act:
+                    qty = max(0, qty - q)
+                    if qty == 0: avg = 0
+            return round(avg, 2)
+
+        if spot_qty > 0:
+            buy_acts = ['買付', '入庫'] if market == '日本株' else ['買付']
+            avg = avg_price(spot, buy_acts, '売付')
+            result.append({'ticker': ticker, 'name': name, 'market': market,
+                           'type': 'spot', 'quantity': int(spot_qty), 'avg_price': avg})
+        if margin_qty > 0:
+            avg = avg_price(sub[sub['action'].isin(['買建', '売埋'])], ['買建'], '売埋')
+            result.append({'ticker': ticker, 'name': name, 'market': market,
+                           'type': 'margin', 'quantity': int(margin_qty), 'avg_price': avg})
+    return pd.DataFrame(result) if result else pd.DataFrame()
+
+# ==================== タグ定義 ====================
+TAG_TREE = {
+    '順張り':     ['新高値ブレイク', 'MAパーフェクトオーダー', '上昇トレンド押し目', '急騰飛び乗り'],
+    '逆張り':     ['押し目(節目/MA)', '二番底', '乖離率/オーバーシュート', '窓埋め完了'],
+    'イベント':   ['決算後初動', '好決算の売られすぎ', '決算前先回り', '政治・ニュース'],
+    'ポジション整理': ['ピラミッティング', 'ナンピン', '現引移行', 'リスクヘッジ'],
+}
+LARGE_TAGS = list(TAG_TREE.keys())
+
+TAG_COLORS = {
+    '順張り': '#00e676', '逆張り': '#42a5f5',
+    'イベント': '#ffca28', 'ポジション整理': '#ce93d8',
+}
+
+# ==================== 既存ログ読み込み（キャッシュ） ====================
+@st.cache_data(ttl=300)
+def load_tradelog_cached(sid):
+    client = get_sheets_client()
+    if not client: return pd.DataFrame(columns=TRADELOG_COLS)
+    df = read_sheet(client, sid, TRADELOG_SHEET)
+    if len(df) == 0: return pd.DataFrame(columns=TRADELOG_COLS)
+    return df
+
+def reload_tradelog():
+    load_tradelog_cached.clear()
+
+# ==================== セッションステート初期化 ====================
+def init_state():
+    defaults = {
+        'realized_df': None,        # アップロード済み実現損益（結合）
+        'history_df': None,         # アップロード済み取引履歴（結合）
+        'pending': [],              # 未保存のタグ付け中レコード
+        'tag_state': {},            # {idx: {large, detail, satisfaction, stop_loss, discipline, memo}}
+        'positions': None,
+        'tab_idx': 0,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init_state()
+
+# ==================== Google Sheets接続チェック ====================
+sheets_client = get_sheets_client()
+sid = get_sid()
+
+if sheets_client and sid:
+    init_sheets(sheets_client, sid)
+
+# ==================== メインUI ====================
+tab_import, tab_tag, tab_dash, tab_pos, tab_settings = st.tabs([
+    "📥 取込", "🏷 タグ付け", "📊 分析", "📦 保有", "⚙️ 設定"
+])
+
+# ====================================================
+# TAB 1: 取込
+# ====================================================
+with tab_import:
+    st.markdown('<div class="section-title">実現損益CSV（分析の主軸）</div>', unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.caption("🇯🇵 日本株 実現損益CSV")
+        jp_real = st.file_uploader("日本株 実現損益", type='csv', key='jp_real', label_visibility='collapsed')
+    with col2:
+        st.caption("🇺🇸 米国株 実現損益CSV")
+        us_real = st.file_uploader("米国株 実現損益", type='csv', key='us_real', label_visibility='collapsed')
+
+    st.markdown('<div class="section-title">取引履歴CSV（ポジション計算用）</div>', unsafe_allow_html=True)
+    col3, col4 = st.columns(2)
+    with col3:
+        st.caption("🇯🇵 日本株 取引履歴CSV")
+        jp_hist = st.file_uploader("日本株 取引履歴", type='csv', key='jp_hist', label_visibility='collapsed')
+    with col4:
+        st.caption("🇺🇸 米国株 取引履歴CSV")
+        us_hist = st.file_uploader("米国株 取引履歴", type='csv', key='us_hist', label_visibility='collapsed')
+
+    # 読み込み処理
+    realized_parts, history_parts = [], []
+
+    if jp_real:
+        try:
+            df = pd.read_csv(jp_real, encoding='cp932')
+            realized_parts.append(parse_realized_jp(df))
+            st.success(f"日本株 実現損益: {len(df)}件 ✅")
+        except Exception as e:
+            st.error(f"日本株 実現損益 読み込みエラー: {e}")
+
+    if us_real:
+        try:
+            df = pd.read_csv(us_real, encoding='cp932')
+            realized_parts.append(parse_realized_us(df))
+            st.success(f"米国株 実現損益: {len(df)}件 ✅")
+        except Exception as e:
+            st.error(f"米国株 実現損益 読み込みエラー: {e}")
+
+    if jp_hist:
+        try:
+            df = pd.read_csv(jp_hist, encoding='cp932')
+            history_parts.append(parse_history_jp(df))
+            st.success(f"日本株 取引履歴: {len(df)}件 ✅")
+        except Exception as e:
+            st.error(f"日本株 取引履歴 読み込みエラー: {e}")
+
+    if us_hist:
+        try:
+            df = pd.read_csv(us_hist, encoding='cp932')
+            history_parts.append(parse_history_us(df))
+            st.success(f"米国株 取引履歴: {len(df)}件 ✅")
+        except Exception as e:
+            st.error(f"米国株 取引履歴 読み込みエラー: {e}")
+
+    # 確定ボタン
+    if realized_parts or history_parts:
         st.divider()
-        st.caption("© 2026 トレード分析＆資金管理アプリ (v5 Google Sheets版)")
+        col_btn, col_info = st.columns([2, 3])
+        with col_btn:
+            do_import = st.button("⚡ メモリに読み込む", type="primary", use_container_width=True)
+        with col_info:
+            if sheets_client and sid:
+                st.caption("✅ Sheets接続OK。「タグ付け」タブで分類後、一括保存できます")
+            else:
+                st.caption("⚠️ Sheets未接続。タグ付けのみ可（保存不可）")
 
+        if do_import:
+            if realized_parts:
+                combined_r = pd.concat(realized_parts, ignore_index=True)
+                combined_r = combined_r.sort_values('trade_date', ascending=False).reset_index(drop=True)
+
+                # 既存ログと照合して未登録分を抽出
+                if sheets_client and sid:
+                    existing = load_tradelog_cached(sid)
+                    if len(existing) > 0 and 'ticker' in existing.columns and 'trade_date' in existing.columns:
+                        existing_keys = set(
+                            existing['ticker'].astype(str) + '_' + existing['trade_date'].astype(str)
+                        )
+                        combined_r['_key'] = combined_r['ticker'].astype(str) + '_' + combined_r['trade_date'].astype(str)
+                        new_only = combined_r[~combined_r['_key'].isin(existing_keys)].drop('_key', axis=1)
+                        dup_cnt  = len(combined_r) - len(new_only)
+                        if dup_cnt > 0:
+                            st.info(f"既登録 {dup_cnt}件をスキップ → 新規 {len(new_only)}件を追加対象")
+                        combined_r = new_only
+
+                st.session_state['realized_df'] = combined_r
+
+                # pending セットアップ
+                pending = []
+                for i, row in combined_r.iterrows():
+                    pending.append({
+                        'idx': i,
+                        'market': row['market'],
+                        'ticker': row['ticker'],
+                        'name': row['name'],
+                        'trade_date': row['trade_date'],
+                        'build_date': row.get('build_date', ''),
+                        'quantity': row['quantity'],
+                        'sell_price': row['sell_price'],
+                        'avg_cost': row['avg_cost'],
+                        'realized_pl': row['realized_pl'],
+                        'realized_pl_pct': row['realized_pl_pct'],
+                    })
+                st.session_state['pending'] = pending
+                st.session_state['tag_state'] = {}
+
+            if history_parts:
+                combined_h = pd.concat(history_parts, ignore_index=True)
+                st.session_state['history_df'] = combined_h
+                pos = calc_positions(combined_h)
+                st.session_state['positions'] = pos
+
+            st.success("✅ 読み込み完了！「🏷 タグ付け」タブへ進んでください")
+            st.rerun()
+
+    # 現在のメモリ状態サマリー
+    st.divider()
+    st.markdown('<div class="section-title">現在のメモリ状態</div>', unsafe_allow_html=True)
+    r = st.session_state.get('realized_df')
+    h = st.session_state.get('history_df')
+    p = st.session_state.get('pending', [])
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(f"""
+<div class="stat-card">
+  <div class="stat-val val-green">{len(r) if r is not None else 0}</div>
+  <div class="stat-lbl">実現損益レコード</div>
+</div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""
+<div class="stat-card">
+  <div class="stat-val val-yellow">{len(p)}</div>
+  <div class="stat-lbl">タグ付け待ち</div>
+</div>""", unsafe_allow_html=True)
+    with c3:
+        h_cnt = len(h) if h is not None else 0
+        st.markdown(f"""
+<div class="stat-card">
+  <div class="stat-val">{h_cnt}</div>
+  <div class="stat-lbl">取引履歴レコード</div>
+</div>""", unsafe_allow_html=True)
+
+# ====================================================
+# TAB 2: タグ付け
+# ====================================================
+with tab_tag:
+    pending = st.session_state.get('pending', [])
+    tag_state = st.session_state.get('tag_state', {})
+
+    # 完了・未完了カウント
+    tagged_idxs = {i for i, ts in tag_state.items() if ts.get('large')}
+    untagged = [p for p in pending if p['idx'] not in tagged_idxs]
+    tagged   = [p for p in pending if p['idx'] in tagged_idxs]
+
+    # ヘッダー
+    total_cnt = len(pending)
+    if total_cnt > 0:
+        remain = len(untagged)
+        pct    = int((len(tagged) / total_cnt) * 100) if total_cnt > 0 else 0
+        col_h1, col_h2 = st.columns([3, 2])
+        with col_h1:
+            st.markdown(f"""
+<div style="padding:10px 0;">
+  <span style="font-size:13px;color:var(--text2);">未タグ付け</span>
+  <span class="counter-badge" style="margin:0 8px;">{remain}件</span>
+  <span style="font-size:12px;color:var(--text2);">{pct}% 完了</span>
+</div>""", unsafe_allow_html=True)
+        with col_h2:
+            # 一括保存ボタン
+            can_save = sheets_client and sid and len(tagged) > 0
+            if st.button(
+                f"💾 {len(tagged)}件を保存",
+                disabled=not can_save,
+                type="primary" if can_save else "secondary",
+                use_container_width=True
+            ):
+                # tag_state → DataFrame → Sheetsへ書き込み
+                save_rows = []
+                r_df = st.session_state.get('realized_df')
+                for p_item in tagged:
+                    idx = p_item['idx']
+                    ts  = tag_state[idx]
+                    bd  = str(p_item.get('build_date', ''))
+                    td  = str(p_item['trade_date'])
+                    hold_d = ''
+                    if bd and bd not in ('', 'NaT', 'nan'):
+                        try:
+                            d1 = datetime.strptime(bd[:10], '%Y-%m-%d')
+                            d2 = datetime.strptime(td[:10], '%Y-%m-%d')
+                            hold_d = str((d2 - d1).days)
+                        except: pass
+                    save_rows.append({
+                        'id': str(uuid.uuid4())[:8],
+                        'market': p_item['market'],
+                        'ticker': p_item['ticker'],
+                        'name': p_item['name'],
+                        'trade_date': td,
+                        'build_date': bd,
+                        'quantity': p_item['quantity'],
+                        'sell_price': p_item['sell_price'],
+                        'avg_cost': p_item['avg_cost'],
+                        'realized_pl': p_item['realized_pl'],
+                        'realized_pl_pct': p_item['realized_pl_pct'],
+                        'hold_days': hold_d,
+                        'tag_large': ts.get('large', ''),
+                        'tag_detail': ts.get('detail', ''),
+                        'satisfaction': ts.get('satisfaction', ''),
+                        'stop_loss_price': ts.get('stop_loss', ''),
+                        'discipline': '1' if ts.get('discipline', False) else '0',
+                        'memo': ts.get('memo', ''),
+                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    })
+
+                if save_rows:
+                    existing = load_tradelog_cached(sid)
+                    new_df = pd.DataFrame(save_rows)
+                    if len(existing) > 0:
+                        combined_save = pd.concat([existing, new_df], ignore_index=True)
+                    else:
+                        combined_save = new_df
+                    ok = write_sheet(sheets_client, sid, TRADELOG_SHEET, combined_save)
+                    if ok:
+                        reload_tradelog()
+                        # 保存済みをpendingから削除
+                        saved_idxs = {p_item['idx'] for p_item in tagged}
+                        st.session_state['pending'] = [x for x in st.session_state['pending']
+                                                       if x['idx'] not in saved_idxs]
+                        for idx in saved_idxs:
+                            st.session_state['tag_state'].pop(idx, None)
+                        st.success(f"✅ {len(save_rows)}件を保存しました！")
+                        st.rerun()
+
+        # プログレスバー
+        st.progress(pct / 100)
     else:
-        st.error("スプレッドシートIDの設定が必要です")
+        st.info("📥 まず「取込」タブでCSVを読み込んでください")
 
-else:
-    st.error("""
-### ⚠️ Google Sheets認証が必要です
+    # --- 未タグ付けカード ---
+    if untagged:
+        st.markdown('<div class="section-title">未タグ付け</div>', unsafe_allow_html=True)
 
-| 変数名 | 内容 |
-|--------|------|
-| `GCP_SERVICE_ACCOUNT_JSON` | サービスアカウントJSONの中身 |
-| `SPREADSHEET_ID` | GoogleスプレッドシートのID |
+        for p_item in untagged[:20]:  # 一度に20件まで表示
+            idx = p_item['idx']
+            ts  = tag_state.get(idx, {})
+            pl  = float(p_item['realized_pl'])
+            pl_cls = "win" if pl >= 0 else "loss"
+            pl_html_cls = "tc-pl-pos" if pl >= 0 else "tc-pl-neg"
+            pl_sign = "+" if pl >= 0 else ""
+            pl_pct  = float(p_item.get('realized_pl_pct', 0))
+            flag    = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
+
+            st.markdown(f"""
+<div class="trade-card {pl_cls}">
+  <div class="tc-header">
+    <div>
+      <div class="tc-ticker">{flag} {p_item['ticker']}</div>
+      <div class="tc-name">{p_item['name']}</div>
+    </div>
+    <div style="text-align:right">
+      <div class="{pl_html_cls}">{pl_sign}¥{pl:,.0f}</div>
+      <div style="font-size:10px;color:var(--text2);font-family:var(--mono);">{pl_pct:+.1f}%</div>
+    </div>
+  </div>
+  <div class="tc-meta">
+    <span>📅 {p_item['trade_date']}</span>
+    <span>📊 {int(p_item['quantity'])}株</span>
+    <span>売 ¥{float(p_item['sell_price']):,.1f}</span>
+    <span>取得 ¥{float(p_item['avg_cost']):,.1f}</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+            # 大分類タイル
+            st.markdown("**📌 大分類**")
+            cols = st.columns(len(LARGE_TAGS))
+            for ci, tag in enumerate(LARGE_TAGS):
+                with cols[ci]:
+                    is_active = ts.get('large') == tag
+                    btn_label = f"{'✓ ' if is_active else ''}{tag}"
+                    if st.button(btn_label, key=f"lg_{idx}_{tag}", use_container_width=True):
+                        if idx not in st.session_state['tag_state']:
+                            st.session_state['tag_state'][idx] = {}
+                        if st.session_state['tag_state'][idx].get('large') == tag:
+                            st.session_state['tag_state'][idx].pop('large', None)
+                            st.session_state['tag_state'][idx].pop('detail', None)
+                        else:
+                            st.session_state['tag_state'][idx]['large'] = tag
+                            st.session_state['tag_state'][idx].pop('detail', None)
+                        st.rerun()
+
+            # 詳細タイル（大分類選択後）
+            if ts.get('large') and ts['large'] in TAG_TREE:
+                details = TAG_TREE[ts['large']]
+                st.markdown(f"**🔍 詳細理由（{ts['large']}）**")
+                d_cols = st.columns(min(len(details), 4))
+                for di, dtag in enumerate(details):
+                    with d_cols[di % 4]:
+                        is_active = ts.get('detail') == dtag
+                        btn_label = f"{'✓ ' if is_active else ''}{dtag}"
+                        if st.button(btn_label, key=f"dt_{idx}_{dtag}", use_container_width=True):
+                            if st.session_state['tag_state'][idx].get('detail') == dtag:
+                                st.session_state['tag_state'][idx].pop('detail', None)
+                            else:
+                                st.session_state['tag_state'][idx]['detail'] = dtag
+                            st.rerun()
+
+            # 納得度・損切り・規律
+            col_sat, col_sl = st.columns(2)
+            with col_sat:
+                st.markdown("**⭐ 納得度**")
+                s_cols = st.columns(5)
+                for si in range(1, 6):
+                    with s_cols[si - 1]:
+                        is_active = ts.get('satisfaction') == si
+                        if st.button(f"{'★' if is_active else '☆'}{si}", key=f"sat_{idx}_{si}", use_container_width=True):
+                            if idx not in st.session_state['tag_state']:
+                                st.session_state['tag_state'][idx] = {}
+                            if st.session_state['tag_state'][idx].get('satisfaction') == si:
+                                st.session_state['tag_state'][idx].pop('satisfaction', None)
+                            else:
+                                st.session_state['tag_state'][idx]['satisfaction'] = si
+                            st.rerun()
+            with col_sl:
+                st.markdown("**🛑 当初損切り価格**")
+                cur_sl = ts.get('stop_loss', 0.0)
+                new_sl = st.number_input(
+                    "損切り", min_value=0.0, value=float(cur_sl), step=1.0, format="%.1f",
+                    key=f"sl_{idx}", label_visibility='collapsed'
+                )
+                if new_sl != cur_sl:
+                    if idx not in st.session_state['tag_state']:
+                        st.session_state['tag_state'][idx] = {}
+                    st.session_state['tag_state'][idx]['stop_loss'] = new_sl
+
+            disc = ts.get('discipline', False)
+            new_disc = st.checkbox("✅ 損切りルールを守った", value=disc, key=f"disc_{idx}")
+            if new_disc != disc:
+                if idx not in st.session_state['tag_state']:
+                    st.session_state['tag_state'][idx] = {}
+                st.session_state['tag_state'][idx]['discipline'] = new_disc
+
+            cur_memo = ts.get('memo', '')
+            new_memo = st.text_input("💬 メモ（任意）", value=cur_memo, key=f"memo_{idx}")
+            if new_memo != cur_memo:
+                if idx not in st.session_state['tag_state']:
+                    st.session_state['tag_state'][idx] = {}
+                st.session_state['tag_state'][idx]['memo'] = new_memo
+
+            st.divider()
+
+        if len(untagged) > 20:
+            st.caption(f"残り {len(untagged) - 20}件は上の件を保存後に表示されます")
+
+    # --- 入力済みカード ---
+    if tagged:
+        st.markdown('<div class="section-title">入力済み（未保存）</div>', unsafe_allow_html=True)
+        for p_item in tagged:
+            idx = p_item['idx']
+            ts  = tag_state[idx]
+            pl  = float(p_item['realized_pl'])
+            pl_cls = "win" if pl >= 0 else "loss"
+            pl_html = "tc-pl-pos" if pl >= 0 else "tc-pl-neg"
+            flag = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
+            color = TAG_COLORS.get(ts.get('large', ''), '#888')
+            st.markdown(f"""
+<div class="trade-card {pl_cls}" style="opacity:0.75;">
+  <div class="tc-header">
+    <div>
+      <div class="tc-ticker">{flag} {p_item['ticker']}</div>
+      <div style="font-size:11px;margin-top:2px;">
+        <span class="badge badge-tagged">✓ {ts.get('large','')} / {ts.get('detail','—')}</span>
+        {'<span class="badge badge-tagged" style="margin-left:4px;">⭐' + str(ts.get('satisfaction','')) + '</span>' if ts.get('satisfaction') else ''}
+      </div>
+    </div>
+    <div class="{pl_html}" style="font-family:var(--mono);font-size:14px;">
+      {"+" if pl >= 0 else ""}¥{pl:,.0f}
+    </div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+# ====================================================
+# TAB 3: 分析ダッシュボード
+# ====================================================
+with tab_dash:
+    # データ読み込み
+    if sheets_client and sid:
+        df_log = load_tradelog_cached(sid)
+    else:
+        df_log = pd.DataFrame(columns=TRADELOG_COLS)
+
+    if len(df_log) == 0:
+        st.info("分析データがありません。CSVを取込みタグ付け後に保存してください。")
+    else:
+        # 型変換
+        df_log['realized_pl']     = pd.to_numeric(df_log['realized_pl'], errors='coerce').fillna(0)
+        df_log['realized_pl_pct'] = pd.to_numeric(df_log['realized_pl_pct'], errors='coerce').fillna(0)
+        df_log['quantity']        = pd.to_numeric(df_log['quantity'], errors='coerce').fillna(0)
+        df_log['hold_days']       = pd.to_numeric(df_log['hold_days'], errors='coerce')
+        df_log['satisfaction']    = pd.to_numeric(df_log['satisfaction'], errors='coerce')
+        df_log['trade_date']      = pd.to_datetime(df_log['trade_date'], errors='coerce')
+        df_log = df_log.dropna(subset=['trade_date'])
+
+        # 期間フィルター
+        period_opt = st.radio("期間", ["全期間", "過去1年", "過去1ヶ月"], horizontal=True)
+        today = pd.Timestamp.today()
+        if period_opt == "過去1年":
+            df_f = df_log[df_log['trade_date'] >= today - timedelta(days=365)]
+        elif period_opt == "過去1ヶ月":
+            df_f = df_log[df_log['trade_date'] >= today - timedelta(days=30)]
+        else:
+            df_f = df_log
+
+        df_f = df_f.copy()
+
+        # ==================== KPI ====================
+        total_pl    = df_f['realized_pl'].sum()
+        total_trades= len(df_f)
+        wins        = (df_f['realized_pl'] > 0).sum()
+        losses      = (df_f['realized_pl'] < 0).sum()
+        win_rate    = wins / total_trades * 100 if total_trades > 0 else 0
+        avg_win     = df_f[df_f['realized_pl'] > 0]['realized_pl'].mean() if wins > 0 else 0
+        avg_loss    = abs(df_f[df_f['realized_pl'] < 0]['realized_pl'].mean()) if losses > 0 else 1
+        pf          = avg_win / avg_loss if avg_loss > 0 else 0
+
+        pl_cls = "val-pos" if total_pl >= 0 else "val-neg"
+        sign   = "+" if total_pl >= 0 else ""
+        st.markdown(f"""
+<div class="stat-grid">
+  <div class="stat-card" style="border-color:{'var(--red)' if total_pl >= 0 else 'var(--blue)'}">
+    <div class="stat-val {pl_cls}">{sign}¥{total_pl:,.0f}</div>
+    <div class="stat-lbl">累積実現損益</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-val val-green">{win_rate:.1f}%</div>
+    <div class="stat-lbl">勝率 ({wins}勝{losses}敗)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-val">{pf:.2f}</div>
+    <div class="stat-lbl">ペイオフレシオ</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        # ==================== 累積損益グラフ ====================
+        st.markdown('<div class="section-title">損益推移</div>', unsafe_allow_html=True)
+        df_daily = df_f.groupby(df_f['trade_date'].dt.date)['realized_pl'].sum().reset_index()
+        df_daily.columns = ['date', 'daily_pl']
+        df_daily = df_daily.sort_values('date')
+        df_daily['cumulative'] = df_daily['daily_pl'].cumsum()
+        df_daily['color'] = df_daily['daily_pl'].apply(lambda x: '#ef5350' if x >= 0 else '#42a5f5')
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=df_daily['date'], y=df_daily['daily_pl'],
+            marker_color=df_daily['color'],
+            name='日次損益', opacity=0.7
+        ))
+        fig.add_trace(go.Scatter(
+            x=df_daily['date'], y=df_daily['cumulative'],
+            mode='lines', name='累積',
+            line=dict(color='#00e676', width=2),
+            yaxis='y2'
+        ))
+        fig.update_layout(
+            height=280,
+            paper_bgcolor='#161a18', plot_bgcolor='#161a18',
+            font=dict(color='#8a9e91', size=10, family='DM Mono'),
+            margin=dict(l=0, r=0, t=10, b=0),
+            legend=dict(orientation='h', yanchor='bottom', y=1, font_size=10),
+            yaxis=dict(gridcolor='#2a312e', zeroline=False),
+            yaxis2=dict(overlaying='y', side='right', gridcolor='transparent', zeroline=False),
+            xaxis=dict(gridcolor='#2a312e'),
+            hovermode='x unified',
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ==================== 銘柄別スタッツ ====================
+        st.markdown('<div class="section-title">銘柄別スタッツ</div>', unsafe_allow_html=True)
+        ticker_stats = df_f.groupby('ticker').agg(
+            名前=('name', 'last'),
+            取引数=('realized_pl', 'count'),
+            勝率=('realized_pl', lambda x: round((x > 0).mean() * 100, 1)),
+            総損益=('realized_pl', 'sum'),
+            平均損益=('realized_pl', 'mean'),
+            平均利益=('realized_pl', lambda x: round(x[x > 0].mean(), 0) if (x > 0).any() else 0),
+            平均損失=('realized_pl', lambda x: round(abs(x[x < 0].mean()), 0) if (x < 0).any() else 0),
+            平均保有日=('hold_days', 'mean'),
+        ).round(1).sort_values('総損益', ascending=False).reset_index()
+        ticker_stats['総損益'] = ticker_stats['総損益'].astype(int)
+        ticker_stats['平均損益'] = ticker_stats['平均損益'].round(0).astype(int)
+        st.dataframe(ticker_stats, use_container_width=True, height=280)
+
+        # ==================== 曜日別分析 ====================
+        st.markdown('<div class="section-title">曜日別 勝率</div>', unsafe_allow_html=True)
+        df_f['weekday'] = df_f['trade_date'].dt.day_name()
+        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+        day_jp    = {'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金'}
+        wday = df_f.groupby('weekday').agg(
+            勝率=('realized_pl', lambda x: round((x > 0).mean() * 100, 1)),
+            総損益=('realized_pl', 'sum'),
+            件数=('realized_pl', 'count'),
+        ).reindex([d for d in day_order if d in df_f['weekday'].unique()]).reset_index()
+        wday['曜日'] = wday['weekday'].map(day_jp)
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(
+            x=wday['曜日'], y=wday['勝率'],
+            marker_color='#00e676', opacity=0.8, name='勝率%',
+            text=wday['勝率'].apply(lambda x: f"{x:.0f}%"),
+            textposition='outside', textfont=dict(size=11, color='#8a9e91'),
+        ))
+        fig2.update_layout(
+            height=220, paper_bgcolor='#161a18', plot_bgcolor='#161a18',
+            font=dict(color='#8a9e91', size=10, family='DM Mono'),
+            margin=dict(l=0, r=0, t=10, b=0),
+            yaxis=dict(gridcolor='#2a312e', range=[0, 110]),
+            xaxis=dict(gridcolor='transparent'),
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # ==================== タグ別分析 ====================
+        tagged_df = df_f[df_f['tag_large'].astype(str).str.strip() != '']
+        if len(tagged_df) > 0:
+            st.markdown('<div class="section-title">タグ別パフォーマンス</div>', unsafe_allow_html=True)
+            tag_stats = tagged_df.groupby('tag_large').agg(
+                件数=('realized_pl', 'count'),
+                勝率=('realized_pl', lambda x: round((x > 0).mean() * 100, 1)),
+                総損益=('realized_pl', 'sum'),
+                平均損益=('realized_pl', 'mean'),
+                平均納得度=('satisfaction', 'mean'),
+            ).round(1).sort_values('総損益', ascending=False).reset_index()
+            tag_stats['総損益'] = tag_stats['総損益'].astype(int)
+
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                fig3 = px.bar(tag_stats, x='tag_large', y='総損益',
+                              color='勝率', color_continuous_scale=[[0,'#42a5f5'],[0.5,'#ffca28'],[1,'#ef5350']],
+                              title='タグ別 総損益',
+                              labels={'tag_large':'タグ','総損益':'損益（円）'})
+                fig3.update_layout(height=240, paper_bgcolor='#161a18', plot_bgcolor='#161a18',
+                                   font_color='#8a9e91', title_font_size=11,
+                                   margin=dict(l=0,r=0,t=30,b=0))
+                st.plotly_chart(fig3, use_container_width=True)
+            with col_t2:
+                fig4 = px.bar(tag_stats, x='tag_large', y='勝率',
+                              title='タグ別 勝率%',
+                              labels={'tag_large':'タグ','勝率':'勝率(%)'},
+                              color_discrete_sequence=['#00e676'])
+                fig4.update_layout(height=240, paper_bgcolor='#161a18', plot_bgcolor='#161a18',
+                                   font_color='#8a9e91', title_font_size=11,
+                                   margin=dict(l=0,r=0,t=30,b=0))
+                st.plotly_chart(fig4, use_container_width=True)
+
+        # 保有期間分布
+        hold_df = df_f.dropna(subset=['hold_days'])
+        if len(hold_df) > 0:
+            st.markdown('<div class="section-title">保有期間分布</div>', unsafe_allow_html=True)
+            avg_hold = hold_df['hold_days'].mean()
+            fig5 = px.histogram(hold_df, x='hold_days', nbins=30,
+                                title=f'保有期間（平均 {avg_hold:.0f}日）',
+                                labels={'hold_days':'保有日数'},
+                                color_discrete_sequence=['#00e676'])
+            fig5.update_layout(height=220, paper_bgcolor='#161a18', plot_bgcolor='#161a18',
+                               font_color='#8a9e91', title_font_size=11,
+                               margin=dict(l=0,r=0,t=30,b=0))
+            st.plotly_chart(fig5, use_container_width=True)
+
+# ====================================================
+# TAB 4: 保有ポジション
+# ====================================================
+with tab_pos:
+    st.markdown('<div class="section-title">現在の保有ポジション</div>', unsafe_allow_html=True)
+
+    pos_df = st.session_state.get('positions')
+
+    if pos_df is None or len(pos_df) == 0:
+        st.info("「取込」タブで取引履歴CSVを読み込むと、現在の保有ポジションが計算されます。")
+    else:
+        # 株価取得ボタン
+        col_pb, col_pi = st.columns([1, 3])
+        with col_pb:
+            do_fetch = st.button("📡 株価取得", use_container_width=True)
+        with col_pi:
+            cache_t = st.session_state.get('price_cache_time', '')
+            st.caption(f"{'⚠️ yfinance未インストール' if not YFINANCE_AVAILABLE else f'15分遅延　{cache_t}'}")
+
+        if do_fetch and YFINANCE_AVAILABLE:
+            with st.spinner("取得中..."):
+                cache = {}
+                for _, row in pos_df.iterrows():
+                    t = f"{row['ticker']}.T" if row['market'] == '日本株' else row['ticker']
+                    try:
+                        hist = yf.Ticker(t).history(period='2d')
+                        cache[row['ticker']] = float(hist['Close'].iloc[-1]) if len(hist) > 0 else None
+                    except: cache[row['ticker']] = None
+                st.session_state['price_cache'] = cache
+                st.session_state['price_cache_time'] = datetime.now().strftime('%H:%M')
+            st.rerun()
+
+        price_cache = st.session_state.get('price_cache', {})
+
+        # サマリー
+        total_cost  = sum(float(r['avg_price']) * int(r['quantity']) for _, r in pos_df.iterrows())
+        total_upnl  = 0.0
+        for _, r in pos_df.iterrows():
+            cp = price_cache.get(r['ticker'])
+            if cp: total_upnl += (cp - float(r['avg_price'])) * int(r['quantity'])
+
+        upnl_cls = "val-pos" if total_upnl >= 0 else "val-neg"
+        sign_u   = "+" if total_upnl >= 0 else ""
+        upnl_pct = total_upnl / total_cost * 100 if total_cost > 0 else 0
+
+        st.markdown(f"""
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-val">{len(pos_df)}</div>
+    <div class="stat-lbl">保有銘柄数</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-val">¥{total_cost:,.0f}</div>
+    <div class="stat-lbl">評価額（簿価）</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-val {upnl_cls}">{sign_u}{upnl_pct:.1f}%</div>
+    <div class="stat-lbl">含み損益</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        # 銘柄別カード
+        for _, row in pos_df.sort_values('ticker').iterrows():
+            cp  = price_cache.get(row['ticker'])
+            avg = float(row['avg_price'])
+            qty = int(row['quantity'])
+            type_label = "信用" if row['type'] == 'margin' else "現物"
+            flag = "🇯🇵" if row['market'] == '日本株' else "🇺🇸"
+
+            if cp and avg > 0:
+                upnl     = (cp - avg) * qty
+                upnl_pct_r = (cp - avg) / avg * 100
+                upnl_str = f"{'+'if upnl>=0 else ''}¥{upnl:,.0f} ({upnl_pct_r:+.1f}%)"
+                upnl_color = "var(--red)" if upnl >= 0 else "var(--blue)"
+                cp_str = f"¥{cp:,.1f}"
+            else:
+                upnl_str = "—"
+                upnl_color = "var(--text2)"
+                cp_str = "取得中..."
+
+            st.markdown(f"""
+<div class="pos-row">
+  <div>
+    <div class="pos-ticker">{flag} {row['ticker']}</div>
+    <div class="pos-sub">{row['name']} · {type_label}</div>
+  </div>
+  <div class="pos-right">
+    <div class="pos-qty">{qty}株　取得均 ¥{avg:,.1f}</div>
+    <div class="pos-avg" style="color:{upnl_color};">{upnl_str}</div>
+    <div class="pos-avg">現在値 {cp_str}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+# ====================================================
+# TAB 5: 設定
+# ====================================================
+with tab_settings:
+    st.markdown('<div class="section-title">接続情報</div>', unsafe_allow_html=True)
+    if sid:
+        st.code(f"SPREADSHEET_ID: {sid}")
+        st.caption(f"Sheets接続: {'✅ OK' if sheets_client else '❌ 未接続'}")
+    else:
+        st.warning("SPREADSHEET_ID が未設定です。Railwayの環境変数に設定してください。")
+        st.markdown("""
+**必要な環境変数（Railway）:**
+- `GCP_SERVICE_ACCOUNT_JSON` : サービスアカウントJSONの中身
+- `SPREADSHEET_ID` : GoogleスプレッドシートのID
 """)
+
+    st.markdown('<div class="section-title">データ操作</div>', unsafe_allow_html=True)
+
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        if st.button("🔄 Sheetsキャッシュをクリア", use_container_width=True):
+            reload_tradelog()
+            st.success("✅ クリアしました")
+    with col_c2:
+        if st.button("🗑 メモリをリセット", use_container_width=True):
+            for k in ['realized_df', 'history_df', 'pending', 'tag_state', 'positions', 'price_cache']:
+                st.session_state.pop(k, None)
+            init_state()
+            st.success("✅ メモリをリセットしました")
+
+    st.markdown('<div class="section-title">Trade_Log データ一覧</div>', unsafe_allow_html=True)
+    if sheets_client and sid:
+        df_view = load_tradelog_cached(sid)
+        if len(df_view) > 0:
+            df_view['realized_pl'] = pd.to_numeric(df_view['realized_pl'], errors='coerce')
+            st.caption(f"登録済み: {len(df_view)}件")
+            view_cols = ['trade_date','market','ticker','name','realized_pl','tag_large','tag_detail','satisfaction']
+            view_cols_exist = [c for c in view_cols if c in df_view.columns]
+            st.dataframe(
+                df_view[view_cols_exist].sort_values('trade_date', ascending=False).reset_index(drop=True),
+                use_container_width=True, height=400
+            )
+
+            if st.button("⚠️ 全データ削除（確認してから押す）", use_container_width=True):
+                st.warning("本当に削除しますか？")
+                if st.checkbox("はい、全データを削除します"):
+                    write_sheet(sheets_client, sid, TRADELOG_SHEET, pd.DataFrame(columns=TRADELOG_COLS))
+                    reload_tradelog()
+                    st.success("✅ 削除しました")
+                    st.rerun()
+        else:
+            st.info("データなし")
+    else:
+        st.info("Sheets未接続のため表示できません")
+
+    st.divider()
+    st.caption("TradeLog v2 — 爆速分析 × 高度なタグ付け")
