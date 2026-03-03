@@ -298,13 +298,13 @@ SETTINGS_SHEET = 'Settings'
 TRADELOG_COLS = [
     'id', 'market',
     'ticker', 'name',
-    'trade_date', 'build_date',      # 約定日, 建約定日
+    'trade_date', 'build_date',
     'quantity', 'sell_price', 'avg_cost',
     'realized_pl', 'realized_pl_pct',
     'hold_days',
     'tag_large', 'tag_detail',
-    'satisfaction',                  # 1-5
-    'stop_loss_price', 'discipline', # 規律
+    'satisfaction',
+    'stop_loss_price', 'discipline',
     'memo',
     'created_at'
 ]
@@ -377,7 +377,6 @@ def init_sheets(client, sid):
 
 # ==================== CSV 読み込みヘルパー ====================
 def read_csv_auto(file):
-    """エンコーディングを自動検出してCSVを読み込む"""
     for enc in ['cp932', 'utf-8-sig', 'utf-8', 'shift_jis', 'latin-1']:
         try:
             file.seek(0)
@@ -409,7 +408,6 @@ def parse_realized_jp(df):
         'avg_cost': _clean_num(df['平均取得価額[円]']),
         'realized_pl': _clean_num(df['実現損益[円]']),
     })
-    # 建約定日があれば
     if '建約定日' in df.columns:
         result['build_date'] = pd.to_datetime(df['建約定日'], format='%Y/%m/%d', errors='coerce').dt.strftime('%Y-%m-%d')
     result['realized_pl_pct'] = np.where(
@@ -475,7 +473,6 @@ def parse_history_us(df):
 
 # ==================== ポジション計算 ====================
 def calc_positions(df_hist):
-    """取引履歴から現在ポジションを算出"""
     if len(df_hist) == 0:
         return pd.DataFrame()
     result = []
@@ -484,19 +481,16 @@ def calc_positions(df_hist):
         name = sub['name'].iloc[-1]
         market = sub['market'].iloc[-1]
 
-        # 現物
         spot = sub[sub['trade_type'].isin(['現物', '現引']) | (sub['market'] == '米国株')]
         spot_buy  = spot[spot['action'].isin(['買付', '入庫'])]['quantity'].sum()
         spot_sell = spot[spot['action'] == '売付']['quantity'].sum()
         spot_qty  = spot_buy - spot_sell
 
-        # 信用
         margin_buy  = sub[sub['action'] == '買建']['quantity'].sum()
         margin_sell = sub[sub['action'] == '売埋']['quantity'].sum()
         kenin       = sub[sub['trade_type'] == '現引']['quantity'].sum()
         margin_qty  = margin_buy - margin_sell - kenin
 
-        # 平均取得価格（FIFO近似）
         def avg_price(rows, buy_acts, sell_act):
             qty, avg = 0.0, 0.0
             for _, r in rows.sort_values('trade_date').iterrows():
@@ -549,10 +543,10 @@ def reload_tradelog():
 # ==================== セッションステート初期化 ====================
 def init_state():
     defaults = {
-        'realized_df': None,        # アップロード済み実現損益（結合）
-        'history_df': None,         # アップロード済み取引履歴（結合）
-        'pending': [],              # 未保存のタグ付け中レコード
-        'tag_state': {},            # {idx: {large, detail, satisfaction, stop_loss, discipline, memo}}
+        'realized_df': None,
+        'history_df': None,
+        'pending': [],
+        'tag_state': {},
         'positions': None,
         'tab_idx': 0,
     }
@@ -597,7 +591,6 @@ with tab_import:
         st.caption("🇺🇸 米国株 取引履歴CSV")
         us_hist = st.file_uploader("米国株 取引履歴", type='csv', key='us_hist', label_visibility='collapsed')
 
-    # 読み込み処理
     realized_parts, history_parts = [], []
 
     if jp_real:
@@ -632,7 +625,6 @@ with tab_import:
         except Exception as e:
             st.error(f"米国株 取引履歴 読み込みエラー: {e}")
 
-    # 確定ボタン
     if realized_parts or history_parts:
         st.divider()
         col_btn, col_info = st.columns([2, 3])
@@ -649,7 +641,6 @@ with tab_import:
                 combined_r = pd.concat(realized_parts, ignore_index=True)
                 combined_r = combined_r.sort_values('trade_date', ascending=False).reset_index(drop=True)
 
-                # 既存ログと照合して未登録分を抽出
                 if sheets_client and sid:
                     existing = load_tradelog_cached(sid)
                     if len(existing) > 0 and 'ticker' in existing.columns and 'trade_date' in existing.columns:
@@ -665,7 +656,6 @@ with tab_import:
 
                 st.session_state['realized_df'] = combined_r
 
-                # pending セットアップ
                 pending = []
                 for i, row in combined_r.iterrows():
                     pending.append({
@@ -693,7 +683,6 @@ with tab_import:
             st.success("✅ 読み込み完了！「🏷 タグ付け」タブへ進んでください")
             st.rerun()
 
-    # 現在のメモリ状態サマリー
     st.divider()
     st.markdown('<div class="section-title">現在のメモリ状態</div>', unsafe_allow_html=True)
     r = st.session_state.get('realized_df')
@@ -725,14 +714,11 @@ with tab_import:
 # TAB 2: タグ付け
 # ====================================================
 with tab_tag:
-    # session_stateから毎回最新を取得（バグ修正：変数をローカルに保持しない）
     pending_list = st.session_state.get('pending', [])
     tag_state    = st.session_state.get('tag_state', {})
 
-    # pending が存在するかチェック（バグ修正：空チェックを明確化）
     has_pending = len(pending_list) > 0
 
-    # 完了・未完了を分類
     tagged_idxs = {i for i, ts in tag_state.items() if ts.get('large')}
     untagged_list = [p for p in pending_list if p['idx'] not in tagged_idxs]
     tagged_list   = [p for p in pending_list if p['idx'] in tagged_idxs]
@@ -742,7 +728,6 @@ with tab_tag:
     if not has_pending:
         st.info("📥 まず「取込」タブでCSVを読み込んでください")
     else:
-        # ── ヘッダー：進捗 & 一括保存 ──
         remain = len(untagged_list)
         done   = len(tagged_list)
         pct    = int(done / total_cnt * 100) if total_cnt > 0 else 0
@@ -813,7 +798,6 @@ with tab_tag:
 
         st.progress(pct / 100)
 
-        # ── 未タグ付けカード ──
         if untagged_list:
             st.markdown('<div class="section-title">未タグ付け</div>', unsafe_allow_html=True)
 
@@ -825,7 +809,6 @@ with tab_tag:
                 pl_sign = "+" if pl >= 0 else ""
                 flag = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
 
-                # カードの左ボーダー色・背景
                 if pl >= 0:
                     card_border = "#ef5350"
                     card_bg     = "rgba(239,83,80,0.06)"
@@ -835,7 +818,6 @@ with tab_tag:
                     card_bg     = "rgba(66,165,245,0.06)"
                     pl_color    = "#42a5f5"
 
-                # 選択中タグのカラー
                 selected_large = ts.get('large', '')
                 tag_color = TAG_COLORS.get(selected_large, '')
                 if selected_large and tag_color:
@@ -873,14 +855,12 @@ with tab_tag:
   </div>
 </div>""", unsafe_allow_html=True)
 
-                # ── 大分類ボタン（rerunのみ、保存しない） ──
                 st.markdown('<div style="padding:8px 0 4px;font-size:11px;color:var(--text2);">📌 大分類</div>', unsafe_allow_html=True)
                 lg_cols = st.columns(len(LARGE_TAGS))
                 for ci, tag in enumerate(LARGE_TAGS):
                     with lg_cols[ci]:
                         is_sel = ts.get('large') == tag
                         tc     = TAG_COLORS.get(tag, '#888')
-                        btn_style = f"border-color:{tc};color:{tc};background:rgba({','.join(str(int(tc.lstrip('#')[i:i+2],16)) for i in (0,2,4))},0.15);" if is_sel else ""
                         label = f"✓ {tag}" if is_sel else tag
                         if st.button(label, key=f"lg_{idx}_{tag}", use_container_width=True):
                             if idx not in st.session_state['tag_state']:
@@ -893,7 +873,6 @@ with tab_tag:
                                 st.session_state['tag_state'][idx].pop('detail', None)
                             st.rerun()
 
-                # ── 詳細タイル（大分類選択後のみ表示） ──
                 if ts.get('large') and ts['large'] in TAG_TREE:
                     details = TAG_TREE[ts['large']]
                     st.markdown(f'<div style="padding:6px 0 4px;font-size:11px;color:var(--text2);">🔍 詳細（{ts["large"]}）</div>', unsafe_allow_html=True)
@@ -909,9 +888,6 @@ with tab_tag:
                                     st.session_state['tag_state'][idx]['detail'] = dtag
                                 st.rerun()
 
-                # ── 納得度・損切り・規律・メモはフォームでまとめる ──
-                # → フォーム内ではsubmitボタンを押すまでrerunしないため、
-                #   入力のたびに保存処理が走るバグを完全に防ぐ
                 with st.form(key=f"form_{idx}", clear_on_submit=False):
                     col_sat, col_sl = st.columns(2)
                     with col_sat:
@@ -944,7 +920,6 @@ with tab_tag:
                         key=f"memo_f_{idx}"
                     )
 
-                    # フォームsubmitでのみ tag_state に反映
                     submitted = st.form_submit_button("✔ この件を確定", use_container_width=True)
                     if submitted:
                         if idx not in st.session_state['tag_state']:
@@ -953,7 +928,6 @@ with tab_tag:
                         st.session_state['tag_state'][idx]['stop_loss']    = sl_val
                         st.session_state['tag_state'][idx]['discipline']   = disc_val
                         st.session_state['tag_state'][idx]['memo']         = memo_val
-                        # large が未選択なら警告
                         if not st.session_state['tag_state'][idx].get('large'):
                             st.warning("大分類を選択してください")
                         else:
@@ -964,7 +938,6 @@ with tab_tag:
             if len(untagged_list) > 20:
                 st.caption(f"残り {len(untagged_list) - 20}件は確定・保存後に表示されます")
 
-        # ── 確定済み（未保存）一覧 ──
         if tagged_list:
             st.markdown('<div class="section-title">確定済み（Sheets未保存）</div>', unsafe_allow_html=True)
             for p_item in tagged_list:
@@ -1007,7 +980,6 @@ with tab_tag:
 # TAB 3: 分析ダッシュボード
 # ====================================================
 with tab_dash:
-    # データ読み込み
     if sheets_client and sid:
         df_log = load_tradelog_cached(sid)
     else:
@@ -1016,7 +988,6 @@ with tab_dash:
     if len(df_log) == 0:
         st.info("分析データがありません。CSVを取込みタグ付け後に保存してください。")
     else:
-        # 型変換
         df_log['realized_pl']     = pd.to_numeric(df_log['realized_pl'], errors='coerce').fillna(0)
         df_log['realized_pl_pct'] = pd.to_numeric(df_log['realized_pl_pct'], errors='coerce').fillna(0)
         df_log['quantity']        = pd.to_numeric(df_log['quantity'], errors='coerce').fillna(0)
@@ -1025,7 +996,6 @@ with tab_dash:
         df_log['trade_date']      = pd.to_datetime(df_log['trade_date'], errors='coerce')
         df_log = df_log.dropna(subset=['trade_date'])
 
-        # 期間フィルター
         period_opt = st.radio("期間", ["全期間", "過去1年", "過去1ヶ月"], horizontal=True)
         today = pd.Timestamp.today()
         if period_opt == "過去1年":
@@ -1093,7 +1063,7 @@ with tab_dash:
             margin=dict(l=0, r=0, t=10, b=0),
             legend=dict(orientation='h', yanchor='bottom', y=1, font_size=10),
             yaxis=dict(gridcolor='#2a312e', zeroline=False),
-            yaxis2=dict(overlaying='y', side='right', gridcolor='transparent', zeroline=False),
+            yaxis2=dict(overlaying='y', side='right', gridcolor='rgba(0,0,0,0)', zeroline=False),
             xaxis=dict(gridcolor='#2a312e'),
             hovermode='x unified',
         )
@@ -1138,7 +1108,7 @@ with tab_dash:
             font=dict(color='#8a9e91', size=10, family='DM Mono'),
             margin=dict(l=0, r=0, t=10, b=0),
             yaxis=dict(gridcolor='#2a312e', range=[0, 110]),
-            xaxis=dict(gridcolor='transparent'),
+            xaxis=dict(gridcolor='rgba(0,0,0,0)'),
         )
         st.plotly_chart(fig2, use_container_width=True)
 
@@ -1175,7 +1145,6 @@ with tab_dash:
                                    margin=dict(l=0,r=0,t=30,b=0))
                 st.plotly_chart(fig4, use_container_width=True)
 
-        # 保有期間分布
         hold_df = df_f.dropna(subset=['hold_days'])
         if len(hold_df) > 0:
             st.markdown('<div class="section-title">保有期間分布</div>', unsafe_allow_html=True)
@@ -1200,7 +1169,6 @@ with tab_pos:
     if pos_df is None or len(pos_df) == 0:
         st.info("「取込」タブで取引履歴CSVを読み込むと、現在の保有ポジションが計算されます。")
     else:
-        # 株価取得ボタン
         col_pb, col_pi = st.columns([1, 3])
         with col_pb:
             do_fetch = st.button("📡 株価取得", use_container_width=True)
@@ -1223,7 +1191,6 @@ with tab_pos:
 
         price_cache = st.session_state.get('price_cache', {})
 
-        # サマリー
         total_cost  = sum(float(r['avg_price']) * int(r['quantity']) for _, r in pos_df.iterrows())
         total_upnl  = 0.0
         for _, r in pos_df.iterrows():
@@ -1251,7 +1218,6 @@ with tab_pos:
 </div>
 """, unsafe_allow_html=True)
 
-        # 銘柄別カード
         for _, row in pos_df.sort_values('ticker').iterrows():
             cp  = price_cache.get(row['ticker'])
             avg = float(row['avg_price'])
