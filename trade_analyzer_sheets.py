@@ -725,40 +725,47 @@ with tab_import:
 # TAB 2: タグ付け
 # ====================================================
 with tab_tag:
-    pending = st.session_state.get('pending', [])
-    tag_state = st.session_state.get('tag_state', {})
+    # session_stateから毎回最新を取得（バグ修正：変数をローカルに保持しない）
+    pending_list = st.session_state.get('pending', [])
+    tag_state    = st.session_state.get('tag_state', {})
 
-    # 完了・未完了カウント
+    # pending が存在するかチェック（バグ修正：空チェックを明確化）
+    has_pending = len(pending_list) > 0
+
+    # 完了・未完了を分類
     tagged_idxs = {i for i, ts in tag_state.items() if ts.get('large')}
-    untagged = [p for p in pending if p['idx'] not in tagged_idxs]
-    tagged   = [p for p in pending if p['idx'] in tagged_idxs]
+    untagged_list = [p for p in pending_list if p['idx'] not in tagged_idxs]
+    tagged_list   = [p for p in pending_list if p['idx'] in tagged_idxs]
 
-    # ヘッダー
-    total_cnt = len(pending)
-    if total_cnt > 0:
-        remain = len(untagged)
-        pct    = int((len(tagged) / total_cnt) * 100) if total_cnt > 0 else 0
+    total_cnt = len(pending_list)
+
+    if not has_pending:
+        st.info("📥 まず「取込」タブでCSVを読み込んでください")
+    else:
+        # ── ヘッダー：進捗 & 一括保存 ──
+        remain = len(untagged_list)
+        done   = len(tagged_list)
+        pct    = int(done / total_cnt * 100) if total_cnt > 0 else 0
+
         col_h1, col_h2 = st.columns([3, 2])
         with col_h1:
             st.markdown(f"""
-<div style="padding:10px 0;">
-  <span style="font-size:13px;color:var(--text2);">未タグ付け</span>
+<div style="padding:8px 0 4px;">
+  <span style="font-size:12px;color:var(--text2);">未タグ付け</span>
   <span class="counter-badge" style="margin:0 8px;">{remain}件</span>
-  <span style="font-size:12px;color:var(--text2);">{pct}% 完了</span>
+  <span style="font-size:11px;color:var(--text2);">完了 {done}/{total_cnt}件</span>
 </div>""", unsafe_allow_html=True)
         with col_h2:
-            # 一括保存ボタン
-            can_save = sheets_client and sid and len(tagged) > 0
+            can_save = sheets_client and sid and done > 0
             if st.button(
-                f"💾 {len(tagged)}件を保存",
+                f"💾 {done}件をSheetsへ保存",
                 disabled=not can_save,
                 type="primary" if can_save else "secondary",
-                use_container_width=True
+                use_container_width=True,
+                key="bulk_save_btn"
             ):
-                # tag_state → DataFrame → Sheetsへ書き込み
                 save_rows = []
-                r_df = st.session_state.get('realized_df')
-                for p_item in tagged:
+                for p_item in tagged_list:
                     idx = p_item['idx']
                     ts  = tag_state[idx]
                     bd  = str(p_item.get('build_date', ''))
@@ -791,170 +798,208 @@ with tab_tag:
                         'memo': ts.get('memo', ''),
                         'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     })
-
                 if save_rows:
                     existing = load_tradelog_cached(sid)
-                    new_df = pd.DataFrame(save_rows)
-                    if len(existing) > 0:
-                        combined_save = pd.concat([existing, new_df], ignore_index=True)
-                    else:
-                        combined_save = new_df
+                    new_df   = pd.DataFrame(save_rows)
+                    combined_save = pd.concat([existing, new_df], ignore_index=True) if len(existing) > 0 else new_df
                     ok = write_sheet(sheets_client, sid, TRADELOG_SHEET, combined_save)
                     if ok:
                         reload_tradelog()
-                        # 保存済みをpendingから削除
-                        saved_idxs = {p_item['idx'] for p_item in tagged}
-                        st.session_state['pending'] = [x for x in st.session_state['pending']
-                                                       if x['idx'] not in saved_idxs]
-                        for idx in saved_idxs:
-                            st.session_state['tag_state'].pop(idx, None)
+                        saved_idxs = {p_item['idx'] for p_item in tagged_list}
+                        st.session_state['pending']   = [x for x in st.session_state['pending'] if x['idx'] not in saved_idxs]
+                        st.session_state['tag_state'] = {k: v for k, v in st.session_state['tag_state'].items() if k not in saved_idxs}
                         st.success(f"✅ {len(save_rows)}件を保存しました！")
                         st.rerun()
 
-        # プログレスバー
         st.progress(pct / 100)
-    else:
-        st.info("📥 まず「取込」タブでCSVを読み込んでください")
 
-    # --- 未タグ付けカード ---
-    if untagged:
-        st.markdown('<div class="section-title">未タグ付け</div>', unsafe_allow_html=True)
+        # ── 未タグ付けカード ──
+        if untagged_list:
+            st.markdown('<div class="section-title">未タグ付け</div>', unsafe_allow_html=True)
 
-        for p_item in untagged[:20]:  # 一度に20件まで表示
-            idx = p_item['idx']
-            ts  = tag_state.get(idx, {})
-            pl  = float(p_item['realized_pl'])
-            pl_cls = "win" if pl >= 0 else "loss"
-            pl_html_cls = "tc-pl-pos" if pl >= 0 else "tc-pl-neg"
-            pl_sign = "+" if pl >= 0 else ""
-            pl_pct  = float(p_item.get('realized_pl_pct', 0))
-            flag    = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
+            for p_item in untagged_list[:20]:
+                idx = p_item['idx']
+                ts  = tag_state.get(idx, {})
+                pl  = float(p_item['realized_pl'])
+                pl_pct = float(p_item.get('realized_pl_pct', 0))
+                pl_sign = "+" if pl >= 0 else ""
+                flag = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
 
-            st.markdown(f"""
-<div class="trade-card {pl_cls}">
-  <div class="tc-header">
+                # カードの左ボーダー色・背景
+                if pl >= 0:
+                    card_border = "#ef5350"
+                    card_bg     = "rgba(239,83,80,0.06)"
+                    pl_color    = "#ef5350"
+                else:
+                    card_border = "#42a5f5"
+                    card_bg     = "rgba(66,165,245,0.06)"
+                    pl_color    = "#42a5f5"
+
+                # 選択中タグのカラー
+                selected_large = ts.get('large', '')
+                tag_color = TAG_COLORS.get(selected_large, '')
+                if selected_large and tag_color:
+                    card_border = tag_color
+                    card_bg = f"rgba({','.join(str(int(tag_color.lstrip('#')[i:i+2], 16)) for i in (0,2,4))},0.08)"
+
+                st.markdown(f"""
+<div style="
+  background:{card_bg};
+  border:1px solid #2a312e;
+  border-left:4px solid {card_border};
+  border-radius:10px;
+  padding:14px 16px 8px;
+  margin-bottom:4px;
+">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
     <div>
-      <div class="tc-ticker">{flag} {p_item['ticker']}</div>
-      <div class="tc-name">{p_item['name']}</div>
+      <div style="font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:0.03em;">
+        {flag} {p_item['ticker']}
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;">{p_item['name']}</div>
     </div>
-    <div style="text-align:right">
-      <div class="{pl_html_cls}">{pl_sign}¥{pl:,.0f}</div>
-      <div style="font-size:10px;color:var(--text2);font-family:var(--mono);">{pl_pct:+.1f}%</div>
+    <div style="text-align:right;">
+      <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:{pl_color};">
+        {pl_sign}¥{pl:,.0f}
+      </div>
+      <div style="font-size:11px;color:{pl_color};font-family:var(--mono);">{pl_pct:+.1f}%</div>
     </div>
   </div>
-  <div class="tc-meta">
-    <span>📅 {p_item['trade_date']}</span>
-    <span>📊 {int(p_item['quantity'])}株</span>
-    <span>売 ¥{float(p_item['sell_price']):,.1f}</span>
-    <span>取得 ¥{float(p_item['avg_cost']):,.1f}</span>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <span style="font-size:10px;color:var(--text2);font-family:var(--mono);">📅 {p_item['trade_date']}</span>
+    <span style="font-size:10px;color:var(--text2);font-family:var(--mono);">📊 {int(p_item['quantity'])}株</span>
+    <span style="font-size:10px;color:var(--text2);font-family:var(--mono);">売 ¥{float(p_item['sell_price']):,.1f}</span>
+    <span style="font-size:10px;color:var(--text2);font-family:var(--mono);">取得 ¥{float(p_item['avg_cost']):,.1f}</span>
   </div>
 </div>""", unsafe_allow_html=True)
 
-            # 大分類タイル
-            st.markdown("**📌 大分類**")
-            cols = st.columns(len(LARGE_TAGS))
-            for ci, tag in enumerate(LARGE_TAGS):
-                with cols[ci]:
-                    is_active = ts.get('large') == tag
-                    btn_label = f"{'✓ ' if is_active else ''}{tag}"
-                    if st.button(btn_label, key=f"lg_{idx}_{tag}", use_container_width=True):
-                        if idx not in st.session_state['tag_state']:
-                            st.session_state['tag_state'][idx] = {}
-                        if st.session_state['tag_state'][idx].get('large') == tag:
-                            st.session_state['tag_state'][idx].pop('large', None)
-                            st.session_state['tag_state'][idx].pop('detail', None)
-                        else:
-                            st.session_state['tag_state'][idx]['large'] = tag
-                            st.session_state['tag_state'][idx].pop('detail', None)
-                        st.rerun()
-
-            # 詳細タイル（大分類選択後）
-            if ts.get('large') and ts['large'] in TAG_TREE:
-                details = TAG_TREE[ts['large']]
-                st.markdown(f"**🔍 詳細理由（{ts['large']}）**")
-                d_cols = st.columns(min(len(details), 4))
-                for di, dtag in enumerate(details):
-                    with d_cols[di % 4]:
-                        is_active = ts.get('detail') == dtag
-                        btn_label = f"{'✓ ' if is_active else ''}{dtag}"
-                        if st.button(btn_label, key=f"dt_{idx}_{dtag}", use_container_width=True):
-                            if st.session_state['tag_state'][idx].get('detail') == dtag:
-                                st.session_state['tag_state'][idx].pop('detail', None)
-                            else:
-                                st.session_state['tag_state'][idx]['detail'] = dtag
-                            st.rerun()
-
-            # 納得度・損切り・規律
-            col_sat, col_sl = st.columns(2)
-            with col_sat:
-                st.markdown("**⭐ 納得度**")
-                s_cols = st.columns(5)
-                for si in range(1, 6):
-                    with s_cols[si - 1]:
-                        is_active = ts.get('satisfaction') == si
-                        if st.button(f"{'★' if is_active else '☆'}{si}", key=f"sat_{idx}_{si}", use_container_width=True):
+                # ── 大分類ボタン（rerunのみ、保存しない） ──
+                st.markdown('<div style="padding:8px 0 4px;font-size:11px;color:var(--text2);">📌 大分類</div>', unsafe_allow_html=True)
+                lg_cols = st.columns(len(LARGE_TAGS))
+                for ci, tag in enumerate(LARGE_TAGS):
+                    with lg_cols[ci]:
+                        is_sel = ts.get('large') == tag
+                        tc     = TAG_COLORS.get(tag, '#888')
+                        btn_style = f"border-color:{tc};color:{tc};background:rgba({','.join(str(int(tc.lstrip('#')[i:i+2],16)) for i in (0,2,4))},0.15);" if is_sel else ""
+                        label = f"✓ {tag}" if is_sel else tag
+                        if st.button(label, key=f"lg_{idx}_{tag}", use_container_width=True):
                             if idx not in st.session_state['tag_state']:
                                 st.session_state['tag_state'][idx] = {}
-                            if st.session_state['tag_state'][idx].get('satisfaction') == si:
-                                st.session_state['tag_state'][idx].pop('satisfaction', None)
+                            if st.session_state['tag_state'][idx].get('large') == tag:
+                                st.session_state['tag_state'][idx].pop('large', None)
+                                st.session_state['tag_state'][idx].pop('detail', None)
                             else:
-                                st.session_state['tag_state'][idx]['satisfaction'] = si
+                                st.session_state['tag_state'][idx]['large'] = tag
+                                st.session_state['tag_state'][idx].pop('detail', None)
                             st.rerun()
-            with col_sl:
-                st.markdown("**🛑 当初損切り価格**")
-                cur_sl = ts.get('stop_loss', 0.0)
-                new_sl = st.number_input(
-                    "損切り", min_value=0.0, value=float(cur_sl), step=1.0, format="%.1f",
-                    key=f"sl_{idx}", label_visibility='collapsed'
-                )
-                if new_sl != cur_sl:
-                    if idx not in st.session_state['tag_state']:
-                        st.session_state['tag_state'][idx] = {}
-                    st.session_state['tag_state'][idx]['stop_loss'] = new_sl
 
-            disc = ts.get('discipline', False)
-            new_disc = st.checkbox("✅ 損切りルールを守った", value=disc, key=f"disc_{idx}")
-            if new_disc != disc:
-                if idx not in st.session_state['tag_state']:
-                    st.session_state['tag_state'][idx] = {}
-                st.session_state['tag_state'][idx]['discipline'] = new_disc
+                # ── 詳細タイル（大分類選択後のみ表示） ──
+                if ts.get('large') and ts['large'] in TAG_TREE:
+                    details = TAG_TREE[ts['large']]
+                    st.markdown(f'<div style="padding:6px 0 4px;font-size:11px;color:var(--text2);">🔍 詳細（{ts["large"]}）</div>', unsafe_allow_html=True)
+                    d_cols = st.columns(len(details))
+                    for di, dtag in enumerate(details):
+                        with d_cols[di]:
+                            is_sel = ts.get('detail') == dtag
+                            label  = f"✓ {dtag}" if is_sel else dtag
+                            if st.button(label, key=f"dt_{idx}_{dtag}", use_container_width=True):
+                                if st.session_state['tag_state'][idx].get('detail') == dtag:
+                                    st.session_state['tag_state'][idx].pop('detail', None)
+                                else:
+                                    st.session_state['tag_state'][idx]['detail'] = dtag
+                                st.rerun()
 
-            cur_memo = ts.get('memo', '')
-            new_memo = st.text_input("💬 メモ（任意）", value=cur_memo, key=f"memo_{idx}")
-            if new_memo != cur_memo:
-                if idx not in st.session_state['tag_state']:
-                    st.session_state['tag_state'][idx] = {}
-                st.session_state['tag_state'][idx]['memo'] = new_memo
+                # ── 納得度・損切り・規律・メモはフォームでまとめる ──
+                # → フォーム内ではsubmitボタンを押すまでrerunしないため、
+                #   入力のたびに保存処理が走るバグを完全に防ぐ
+                with st.form(key=f"form_{idx}", clear_on_submit=False):
+                    col_sat, col_sl = st.columns(2)
+                    with col_sat:
+                        st.markdown('<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">⭐ 納得度</div>', unsafe_allow_html=True)
+                        cur_sat = ts.get('satisfaction', 3)
+                        sat_val = st.select_slider(
+                            "納得度", options=[1,2,3,4,5],
+                            value=cur_sat if cur_sat else 3,
+                            format_func=lambda x: "★"*x + "☆"*(5-x),
+                            key=f"sat_sl_{idx}", label_visibility='collapsed'
+                        )
+                    with col_sl:
+                        st.markdown('<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">🛑 当初損切り価格</div>', unsafe_allow_html=True)
+                        cur_sl_val = ts.get('stop_loss', 0.0)
+                        sl_val = st.number_input(
+                            "損切り", min_value=0.0,
+                            value=float(cur_sl_val) if cur_sl_val else 0.0,
+                            step=1.0, format="%.1f",
+                            key=f"sl_f_{idx}", label_visibility='collapsed'
+                        )
 
-            st.divider()
+                    disc_val = st.checkbox(
+                        "✅ 損切りルールを守った",
+                        value=ts.get('discipline', False),
+                        key=f"disc_f_{idx}"
+                    )
+                    memo_val = st.text_input(
+                        "💬 メモ（任意）",
+                        value=ts.get('memo', ''),
+                        key=f"memo_f_{idx}"
+                    )
 
-        if len(untagged) > 20:
-            st.caption(f"残り {len(untagged) - 20}件は上の件を保存後に表示されます")
+                    # フォームsubmitでのみ tag_state に反映
+                    submitted = st.form_submit_button("✔ この件を確定", use_container_width=True)
+                    if submitted:
+                        if idx not in st.session_state['tag_state']:
+                            st.session_state['tag_state'][idx] = {}
+                        st.session_state['tag_state'][idx]['satisfaction'] = sat_val
+                        st.session_state['tag_state'][idx]['stop_loss']    = sl_val
+                        st.session_state['tag_state'][idx]['discipline']   = disc_val
+                        st.session_state['tag_state'][idx]['memo']         = memo_val
+                        # large が未選択なら警告
+                        if not st.session_state['tag_state'][idx].get('large'):
+                            st.warning("大分類を選択してください")
+                        else:
+                            st.rerun()
 
-    # --- 入力済みカード ---
-    if tagged:
-        st.markdown('<div class="section-title">入力済み（未保存）</div>', unsafe_allow_html=True)
-        for p_item in tagged:
-            idx = p_item['idx']
-            ts  = tag_state[idx]
-            pl  = float(p_item['realized_pl'])
-            pl_cls = "win" if pl >= 0 else "loss"
-            pl_html = "tc-pl-pos" if pl >= 0 else "tc-pl-neg"
-            flag = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
-            color = TAG_COLORS.get(ts.get('large', ''), '#888')
-            st.markdown(f"""
-<div class="trade-card {pl_cls}" style="opacity:0.75;">
-  <div class="tc-header">
-    <div>
-      <div class="tc-ticker">{flag} {p_item['ticker']}</div>
-      <div style="font-size:11px;margin-top:2px;">
-        <span class="badge badge-tagged">✓ {ts.get('large','')} / {ts.get('detail','—')}</span>
-        {'<span class="badge badge-tagged" style="margin-left:4px;">⭐' + str(ts.get('satisfaction','')) + '</span>' if ts.get('satisfaction') else ''}
-      </div>
+                st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+
+            if len(untagged_list) > 20:
+                st.caption(f"残り {len(untagged_list) - 20}件は確定・保存後に表示されます")
+
+        # ── 確定済み（未保存）一覧 ──
+        if tagged_list:
+            st.markdown('<div class="section-title">確定済み（Sheets未保存）</div>', unsafe_allow_html=True)
+            for p_item in tagged_list:
+                idx = p_item['idx']
+                ts  = tag_state[idx]
+                pl  = float(p_item['realized_pl'])
+                pl_color = "#ef5350" if pl >= 0 else "#42a5f5"
+                flag = "🇯🇵" if p_item['market'] == '日本株' else "🇺🇸"
+                tag_c = TAG_COLORS.get(ts.get('large', ''), '#00e676')
+                sign  = "+" if pl >= 0 else ""
+                sat_stars = "★" * int(ts.get('satisfaction') or 0)
+
+                st.markdown(f"""
+<div style="
+  background:var(--surface);
+  border:1px solid #2a312e;
+  border-left:4px solid {tag_c};
+  border-radius:8px;
+  padding:10px 14px;
+  margin-bottom:6px;
+  display:flex;justify-content:space-between;align-items:center;
+  opacity:0.85;
+">
+  <div>
+    <div style="font-family:var(--mono);font-size:13px;font-weight:600;">{flag} {p_item['ticker']}</div>
+    <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;">
+      <span class="badge" style="background:rgba({','.join(str(int(tag_c.lstrip('#')[i:i+2],16)) for i in (0,2,4))},0.15);color:{tag_c};border:1px solid {tag_c}40;">
+        {ts.get('large','')}
+      </span>
+      {"<span class='badge badge-tagged'>" + ts.get('detail','') + "</span>" if ts.get('detail') else ""}
+      {"<span style='font-size:11px;color:#ffca28;'>" + sat_stars + "</span>" if sat_stars else ""}
     </div>
-    <div class="{pl_html}" style="font-family:var(--mono);font-size:14px;">
-      {"+" if pl >= 0 else ""}¥{pl:,.0f}
-    </div>
+  </div>
+  <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:{pl_color};">
+    {sign}¥{pl:,.0f}
   </div>
 </div>""", unsafe_allow_html=True)
 
